@@ -80,8 +80,8 @@ function computeHealthScore(counts: { critical: number; high: number; medium: nu
 }
 
 async function callGemini(project: string, fileType: string, code: string, policies: string[]): Promise<unknown[]> {
-  const apiKey = process.env.LOVABLE_API_KEY;
-  if (!apiKey) throw new Error("Missing LOVABLE_API_KEY");
+  const apiKey = process.env.GOOGLE_API_KEY;
+  if (!apiKey) throw new Error("Missing GOOGLE_API_KEY");
 
   const systemPrompt = `You are SecurePulse, an enterprise, non-training-tier code security auditor.
 Analyze code for security vulnerabilities, secret exposure, and compliance violations aligned with: ${policies.join(", ") || "OWASP Top 10, CWE Top 25"}.
@@ -100,33 +100,32 @@ Language / File type: ${fileType}
 ${code}
 --- CODE END ---`;
 
-  const res = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+  const model = "gemini-2.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+
+  const res = await fetch(url, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`,
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      response_format: { type: "json_object" },
-      // Privacy-first: signal non-training / enterprise handling to the gateway.
-      metadata: { tier: "enterprise", training: false, privacy: "no-retain" },
+      systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        responseMimeType: "application/json",
+        temperature: 0.2,
+      },
     }),
   });
 
   if (!res.ok) {
     const body = await res.text();
     if (res.status === 429) throw new Error("Rate limit hit — please retry in a moment.");
-    if (res.status === 402) throw new Error("AI credits exhausted — add credits in workspace settings.");
-    throw new Error(`AI gateway error [${res.status}]: ${body.slice(0, 300)}`);
+    throw new Error(`Gemini API error [${res.status}]: ${body.slice(0, 300)}`);
   }
 
-  const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> };
-  const content = data.choices?.[0]?.message?.content ?? "{}";
+  const data = (await res.json()) as {
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  const content = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "{}";
   try {
     const parsed = JSON.parse(content) as { vulnerabilities?: unknown };
     return Array.isArray(parsed.vulnerabilities) ? parsed.vulnerabilities : [];
@@ -134,6 +133,7 @@ ${code}
     return [];
   }
 }
+
 
 export const runScan = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => ScanInput.parse(input))
