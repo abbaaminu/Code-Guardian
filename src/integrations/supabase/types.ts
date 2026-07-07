@@ -14,7 +14,119 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      policies: {
+        Row: {
+          category: string
+          created_at: string
+          description: string
+          enabled: boolean
+          id: string
+          name: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          description: string
+          enabled?: boolean
+          id?: string
+          name: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          description?: string
+          enabled?: boolean
+          id?: string
+          name?: string
+        }
+        Relationships: []
+      }
+      scans: {
+        Row: {
+          created_at: string
+          file_type: string
+          health_score: number
+          id: string
+          project_name: string
+          source_code: string
+          status: Database["public"]["Enums"]["scan_status"]
+          vulnerabilities_count: Json
+        }
+        Insert: {
+          created_at?: string
+          file_type?: string
+          health_score?: number
+          id?: string
+          project_name: string
+          source_code?: string
+          status?: Database["public"]["Enums"]["scan_status"]
+          vulnerabilities_count?: Json
+        }
+        Update: {
+          created_at?: string
+          file_type?: string
+          health_score?: number
+          id?: string
+          project_name?: string
+          source_code?: string
+          status?: Database["public"]["Enums"]["scan_status"]
+          vulnerabilities_count?: Json
+        }
+        Relationships: []
+      }
+      vulnerabilities: {
+        Row: {
+          created_at: string
+          cwe_id: string | null
+          file_path: string | null
+          fixed_code_block: string
+          id: string
+          line_end: number | null
+          line_start: number | null
+          remediation_steps: string
+          scan_id: string
+          severity: Database["public"]["Enums"]["vuln_severity"]
+          title: string
+          vulnerable_code_block: string
+        }
+        Insert: {
+          created_at?: string
+          cwe_id?: string | null
+          file_path?: string | null
+          fixed_code_block?: string
+          id?: string
+          line_end?: number | null
+          line_start?: number | null
+          remediation_steps?: string
+          scan_id: string
+          severity: Database["public"]["Enums"]["vuln_severity"]
+          title: string
+          vulnerable_code_block?: string
+        }
+        Update: {
+          created_at?: string
+          cwe_id?: string | null
+          file_path?: string | null
+          fixed_code_block?: string
+          id?: string
+          line_end?: number | null
+          line_start?: number | null
+          remediation_steps?: string
+          scan_id?: string
+          severity?: Database["public"]["Enums"]["vuln_severity"]
+          title?: string
+          vulnerable_code_block?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "vulnerabilities_scan_id_fkey"
+            columns: ["scan_id"]
+            isOneToOne: false
+            referencedRelation: "scans"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +135,8 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      scan_status: "queued" | "scanning" | "completed" | "failed"
+      vuln_severity: "low" | "medium" | "high" | "critical"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +263,9 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      scan_status: ["queued", "scanning", "completed", "failed"],
+      vuln_severity: ["low", "medium", "high", "critical"],
+    },
   },
 } as const
