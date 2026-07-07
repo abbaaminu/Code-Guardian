@@ -1,0 +1,7 @@
+# SecurePulse
+
+> AI-powered cyber security & code integrity auditor. Paste code or upload files to scan for OWASP Top 10, CWE, and secret exposure vulnerabilities with automated patch suggestions.
+
+## Pages
+- [Scan Dashboard](/dashboard): Run new scans and review audit history.
+- [Security Policies](/policies): Toggle compliance standards (OWASP, SANS, PCI-DSS, HIPAA, smart-contract safeguards).
