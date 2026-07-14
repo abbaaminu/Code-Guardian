@@ -1,4 +1,4 @@
-import { createFileRoute, Link, useRouter } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
+import { ScanSimulator } from "@/components/scan-simulator";
 import { supabase } from "@/integrations/supabase/client";
 import { runScan } from "@/lib/scan.functions";
 import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2 } from "lucide-react";
@@ -41,8 +42,9 @@ export const Route = createFileRoute("/dashboard")({
 
 function Dashboard() {
   const qc = useQueryClient();
-  const router = useRouter();
   const run = useServerFn(runScan);
+  const [completedScanId, setCompletedScanId] = useState<string | null>(null);
+  const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
@@ -60,12 +62,20 @@ function Dashboard() {
   const scanMutation = useMutation({
     mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) =>
       run({ data: input }),
+    onMutate: () => {
+      setPhase("running");
+      setCompletedScanId(null);
+    },
     onSuccess: async (res) => {
+      setCompletedScanId(res.id);
+      setPhase("done");
       toast.success("Scan complete", { description: `Health score: ${res.health_score}/100` });
       await qc.invalidateQueries({ queryKey: ["scans"] });
-      router.navigate({ to: "/scans/$id", params: { id: res.id } });
     },
-    onError: (e: Error) => toast.error("Scan failed", { description: e.message }),
+    onError: (e: Error) => {
+      setPhase("failed");
+      toast.error("Scan failed", { description: e.message });
+    },
   });
 
   const totals = {
@@ -75,6 +85,8 @@ function Dashboard() {
       ? Math.round(scans.reduce((n, s) => n + s.health_score, 0) / scans.length)
       : 0,
   };
+
+  const showSimulator = phase !== "idle";
 
   return (
     <AppShell
@@ -93,7 +105,17 @@ function Dashboard() {
       </div>
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
-        <ScanForm submitting={scanMutation.isPending} onSubmit={(v) => scanMutation.mutate(v)} />
+        {showSimulator ? (
+          <ScanSimulator
+            running={phase === "running"}
+            completed={phase === "done"}
+            failed={phase === "failed"}
+            scanId={completedScanId}
+            onDismiss={() => { setPhase("idle"); setCompletedScanId(null); }}
+          />
+        ) : (
+          <ScanForm submitting={scanMutation.isPending} onSubmit={(v) => scanMutation.mutate(v)} />
+        )}
 
         <section id="history" className="space-y-3">
           <div className="flex items-baseline justify-between">

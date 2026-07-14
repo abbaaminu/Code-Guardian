@@ -119,3 +119,8 @@
     linear-gradient(90deg, color-mix(in oklch, var(--primary) 8%, transparent) 1px, transparent 1px);
   background-size: 32px 32px;
 }
+
+@keyframes scan-shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
