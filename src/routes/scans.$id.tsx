@@ -1,28 +1,15 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { SeverityBadge } from "@/components/severity-badge";
-import { CodeBlock } from "@/components/code-block";
+import { CodeVault } from "@/components/code-vault";
+import { VulnCard, type VulnCardData } from "@/components/vuln-card";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import { ArrowLeft, Copy, ShieldCheck } from "lucide-react";
+import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import type { Severity } from "@/lib/severity";
-import { severityRing } from "@/lib/severity";
-
-interface Vuln {
-  id: string;
-  title: string;
-  severity: Severity;
-  cwe_id: string | null;
-  vulnerable_code_block: string;
-  fixed_code_block: string;
-  remediation_steps: string;
-  file_path: string | null;
-  line_start: number | null;
-  line_end: number | null;
-}
 
 interface Scan {
   id: string;
@@ -39,7 +26,7 @@ export const Route = createFileRoute("/scans/$id")({
   head: ({ params }) => ({
     meta: [
       { title: `Audit ${params.id.slice(0, 8)} · SecurePulse` },
-      { name: "description", content: "Vulnerability report with AI-suggested patches and remediation steps." },
+      { name: "description", content: "Interactive code audit workspace with AI-suggested patches and side-by-side diffs." },
     ],
   }),
   component: ScanReport,
@@ -53,6 +40,11 @@ export const Route = createFileRoute("/scans/$id")({
 
 function ScanReport() {
   const { id } = Route.useParams();
+  const [activeId, setActiveId] = useState<string | null>(null);
+  const [applied, setApplied] = useState<Record<string, boolean>>({});
+  const [patchedLines, setPatchedLines] = useState<Set<number>>(new Set());
+  const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
+  const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { data, isLoading } = useQuery({
     queryKey: ["scan", id],
@@ -64,9 +56,21 @@ function ScanReport() {
       if (e1) throw e1;
       if (!scan) throw notFound();
       if (e2) throw e2;
-      return { scan: scan as unknown as Scan, vulns: (vulns ?? []) as unknown as Vuln[] };
+      return { scan: scan as unknown as Scan, vulns: (vulns ?? []) as unknown as VulnCardData[] };
     },
   });
+
+  const highlights = useMemo(() => {
+    if (!data) return [];
+    return data.vulns
+      .filter((v) => v.line_start && v.line_end)
+      .map((v) => ({
+        start: v.line_start!,
+        end: v.line_end!,
+        severity: v.severity,
+        vulnId: v.id,
+      }));
+  }, [data]);
 
   if (isLoading || !data) {
     return (
@@ -77,14 +81,33 @@ function ScanReport() {
   }
 
   const { scan, vulns } = data;
-  const highlights = vulns
-    .filter((v) => v.line_start && v.line_end)
-    .map((v) => ({ start: v.line_start!, end: v.line_end!, severity: v.severity }));
 
-  const copy = async (text: string) => {
-    await navigator.clipboard.writeText(text);
-    toast.success("Fixed code copied");
+  const handleLineClick = (vulnId: string) => {
+    setActiveId(vulnId);
+    requestAnimationFrame(() => {
+      cardRefs.current[vulnId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   };
+
+  const handleToggle = (vulnId: string) => {
+    setActiveId((cur) => (cur === vulnId ? null : vulnId));
+  };
+
+  const handleApply = (v: VulnCardData) => {
+    if (!v.line_start || !v.line_end) {
+      toast.error("No line range for this finding");
+      return;
+    }
+    const lines = new Set<number>();
+    for (let i = v.line_start; i <= v.line_end; i++) lines.add(i);
+    setPatchedLines((prev) => new Set([...prev, ...lines]));
+    setFlashLines(lines);
+    setApplied((prev) => ({ ...prev, [v.id]: true }));
+    toast.success("Patch applied", { description: `Lines ${v.line_start}-${v.line_end} secured` });
+    setTimeout(() => setFlashLines(new Set()), 1500);
+  };
+
+  const appliedCount = Object.values(applied).filter(Boolean).length;
 
   return (
     <AppShell
@@ -92,89 +115,78 @@ function ScanReport() {
       subtitle={`${scan.file_type} · ${new Date(scan.created_at).toLocaleString()} · ${vulns.length} findings`}
       actions={
         <Button asChild variant="ghost" size="sm">
-          <Link to="/dashboard"><ArrowLeft className="mr-1 h-3.5 w-3.5" />Back</Link>
+          <Link to="/dashboard"><ArrowLeft className="mr-1 h-3.5 w-3.5" />Dashboard</Link>
         </Button>
       }
     >
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)] min-h-[calc(100vh-3.5rem)]">
-        <section className="border-b border-border/60 bg-[oklch(0.14_0.02_250)] p-4 lg:border-b-0 lg:border-r">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
-              <div className="text-xs uppercase tracking-widest text-muted-foreground">Submitted source</div>
-              <div className="text-sm font-medium">{scan.project_name}</div>
-            </div>
-            <div className="flex items-center gap-2 rounded-full border border-border/60 bg-card/60 px-3 py-1 text-xs">
-              <ShieldCheck className="h-3.5 w-3.5 text-primary" />
-              Health {scan.health_score}/100
-            </div>
-          </div>
-          <CodeBlock code={scan.source_code || "// (no source available)"} highlightLines={highlights} />
+      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(420px,480px)]">
+        {/* LEFT — Code Vault */}
+        <section className="min-w-0">
+          <CodeVault
+            code={scan.source_code || "// (no source available)"}
+            highlights={highlights}
+            activeVulnId={activeId}
+            patchedLines={new Set([...patchedLines, ...flashLines])}
+            onLineClick={handleLineClick}
+          />
         </section>
 
-        <aside className="space-y-4 p-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold uppercase tracking-widest text-muted-foreground">Findings</h2>
-            <div className="flex gap-1">
-              {(["critical", "high", "medium", "low"] as Severity[]).map((s) => (
-                <span key={s} className="rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[10px] tabular-nums">
-                  <span className="mr-1 uppercase text-muted-foreground">{s[0]}</span>
-                  {scan.vulnerabilities_count?.[s] ?? 0}
-                </span>
+        {/* RIGHT — Actionable Audit Panel */}
+        <aside className="flex min-h-0 flex-col gap-3">
+          <Card className="border-primary/30 bg-gradient-to-br from-card to-card/50 p-4 glow-primary">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Integrity Score</div>
+                <div className="mt-1 flex items-baseline gap-2">
+                  <span className="text-3xl font-bold tabular-nums text-primary">{scan.health_score}</span>
+                  <span className="text-xs text-muted-foreground">/ 100</span>
+                </div>
+              </div>
+              <ShieldCheck className="h-8 w-8 text-primary" />
+            </div>
+            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+              {(["critical","high","medium","low"] as Severity[]).map((s) => (
+                <div key={s} className="rounded-md border border-border/60 bg-muted/20 py-1.5">
+                  <div className="text-sm font-bold tabular-nums">{scan.vulnerabilities_count?.[s] ?? 0}</div>
+                  <div className="text-[9px] uppercase tracking-widest text-muted-foreground">{s}</div>
+                </div>
               ))}
             </div>
+            {appliedCount > 0 && (
+              <div className="mt-3 flex items-center gap-2 rounded-md border border-low/40 bg-low/10 px-2.5 py-1.5 text-[11px] text-low animate-fade-in">
+                <Sparkles className="h-3.5 w-3.5" />
+                {appliedCount} patch{appliedCount === 1 ? "" : "es"} applied
+              </div>
+            )}
+          </Card>
+
+          <div className="flex items-center justify-between px-1">
+            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+              Findings ({vulns.length})
+            </h2>
+            <span className="text-[10px] text-muted-foreground">click a line to inspect</span>
           </div>
 
-          {vulns.length === 0 && (
-            <Card className="border-low/40 bg-low/5 p-6 text-center">
-              <ShieldCheck className="mx-auto h-10 w-10 text-low" />
-              <div className="mt-3 text-sm font-medium">No vulnerabilities detected</div>
-              <p className="mt-1 text-xs text-muted-foreground">This code passed all enabled policies.</p>
-            </Card>
-          )}
-
-          <div className="space-y-3">
-            {vulns.map((v) => (
-              <Card key={v.id} className={`border ${severityRing(v.severity)} bg-card/70 p-4`}>
-                <div className="mb-2 flex items-start justify-between gap-2">
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <SeverityBadge severity={v.severity} />
-                      {v.cwe_id && <span className="text-[10px] text-muted-foreground">{v.cwe_id}</span>}
-                    </div>
-                    <h3 className="mt-1 text-sm font-semibold leading-snug">{v.title}</h3>
-                    {v.file_path && (
-                      <div className="text-[11px] text-muted-foreground">{v.file_path}{v.line_start && `:${v.line_start}`}</div>
-                    )}
-                  </div>
-                </div>
-
-                {v.vulnerable_code_block && (
-                  <div className="mb-2">
-                    <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Vulnerable</div>
-                    <CodeBlock code={v.vulnerable_code_block} className="text-[11.5px]" />
-                  </div>
-                )}
-
-                {v.fixed_code_block && (
-                  <div className="mb-2">
-                    <div className="mb-1 flex items-center justify-between">
-                      <div className="text-[10px] uppercase tracking-widest text-primary">AI patch suggestion</div>
-                      <Button size="sm" variant="ghost" className="h-6 gap-1 px-2 text-[11px]" onClick={() => copy(v.fixed_code_block)}>
-                        <Copy className="h-3 w-3" />Copy
-                      </Button>
-                    </div>
-                    <CodeBlock code={v.fixed_code_block} className="text-[11.5px] border-primary/30" />
-                  </div>
-                )}
-
-                {v.remediation_steps && (
-                  <div className="mt-2 rounded-md border border-border/60 bg-muted/30 p-3 text-[12px] leading-relaxed">
-                    <div className="mb-1 text-[10px] uppercase tracking-widest text-muted-foreground">Remediation</div>
-                    {v.remediation_steps}
-                  </div>
-                )}
+          <div className="flex-1 space-y-3 overflow-auto pb-6 pr-1">
+            {vulns.length === 0 ? (
+              <Card className="border-low/40 bg-low/5 p-8 text-center">
+                <ShieldCheck className="mx-auto h-12 w-12 text-low" />
+                <div className="mt-3 text-sm font-medium">All clear</div>
+                <p className="mt-1 text-xs text-muted-foreground">No vulnerabilities detected.</p>
               </Card>
-            ))}
+            ) : (
+              vulns.map((v) => (
+                <VulnCard
+                  key={v.id}
+                  ref={(el) => { cardRefs.current[v.id] = el; }}
+                  vuln={v}
+                  expanded={activeId === v.id}
+                  applied={!!applied[v.id]}
+                  onToggle={() => handleToggle(v.id)}
+                  onApply={() => handleApply(v)}
+                />
+              ))
+            )}
           </div>
         </aside>
       </div>
