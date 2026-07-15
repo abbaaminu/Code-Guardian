@@ -29,9 +29,6 @@ async function serverSupabase() {
   return supabaseAdmin;
 }
 
-    auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
-  });
-}
 
 function safeString(v: unknown, max = 4000): string {
   if (typeof v !== "string") return "";
