@@ -43,21 +43,15 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const qc = useQueryClient();
   const run = useServerFn(runScan);
+  const list = useServerFn(listScans);
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("scans")
-        .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as unknown as ScanRow[];
-    },
+    queryFn: async () => (await list()) as unknown as ScanRow[],
   });
+
 
   const scanMutation = useMutation({
     mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) =>
