@@ -15,7 +15,9 @@ import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
 import { ScanAnalytics } from "@/components/scan-analytics";
 import { ReportExportDialog } from "@/components/report-export-dialog";
+import { ConnectRepositoryPanel } from "@/components/connect-repository";
 import {
+
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
