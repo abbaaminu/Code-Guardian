@@ -105,10 +105,12 @@ function Dashboard() {
       }
     >
       <div className="grid-bg border-b border-border/60">
-        <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
           <StatCards {...totals} />
+          <ScanAnalytics scans={scans} />
         </div>
       </div>
+
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
         {showSimulator ? (
