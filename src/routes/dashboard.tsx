@@ -13,10 +13,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
+import { ScanAnalytics } from "@/components/scan-analytics";
+import { ReportExportDialog } from "@/components/report-export-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { listScans, runScan } from "@/lib/scan.functions";
 
-import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2 } from "lucide-react";
+import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown } from "lucide-react";
 import type { Severity } from "@/lib/severity";
+
 
 interface ScanRow {
   id: string;
