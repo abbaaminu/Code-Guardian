@@ -13,8 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
-import { supabase } from "@/integrations/supabase/client";
-import { runScan } from "@/lib/scan.functions";
+import { listScans, runScan } from "@/lib/scan.functions";
+
 import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2 } from "lucide-react";
 import type { Severity } from "@/lib/severity";
 
