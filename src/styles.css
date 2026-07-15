@@ -124,3 +124,18 @@
   0% { transform: translateX(-100%); }
   100% { transform: translateX(400%); }
 }
+
+@media print {
+  body * { visibility: hidden !important; }
+  #printable-report, #printable-report * { visibility: visible !important; }
+  #printable-report {
+    position: fixed !important;
+    inset: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 32px !important;
+    background: white !important;
+    color: black !important;
+  }
+}
+
