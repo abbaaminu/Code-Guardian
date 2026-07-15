@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { supabase } from "@/integrations/supabase/client";
+import { listPolicies, togglePolicy } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
+
 
 interface Policy {
   id: string;
