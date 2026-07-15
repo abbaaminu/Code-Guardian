@@ -181,3 +181,54 @@ export const runScan = createServerFn({ method: "POST" })
       throw err;
     }
   });
+
+export const listScans = createServerFn({ method: "GET" }).handler(async () => {
+  const supabase = await serverSupabase();
+  const { data, error } = await supabase
+    .from("scans")
+    .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
+    .order("created_at", { ascending: false })
+    .limit(50);
+  if (error) throw new Error(error.message);
+  return data ?? [];
+});
+
+export const getScanReport = createServerFn({ method: "GET" })
+  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .handler(async ({ data }) => {
+    const supabase = await serverSupabase();
+    const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
+      supabase.from("scans").select("*").eq("id", data.id).maybeSingle(),
+      supabase.from("vulnerabilities").select("*").eq("scan_id", data.id).order("severity"),
+    ]);
+    if (e1) throw new Error(e1.message);
+    if (e2) throw new Error(e2.message);
+    if (!scan) throw new Error("Scan not found");
+    return { scan, vulns: vulns ?? [] };
+  });
+
+export const listPolicies = createServerFn({ method: "GET" }).handler(async () => {
+  const supabase = await serverSupabase();
+  const { data, error } = await supabase
+    .from("policies")
+    .select("*")
+    .order("category")
+    .order("name");
+  if (error) throw new Error(error.message);
+  return data ?? [];
+});
+
+export const togglePolicy = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid(), enabled: z.boolean() }).parse(input),
+  )
+  .handler(async ({ data }) => {
+    const supabase = await serverSupabase();
+    const { error } = await supabase
+      .from("policies")
+      .update({ enabled: data.enabled })
+      .eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
