@@ -56,6 +56,8 @@ function Dashboard() {
   const list = useServerFn(listScans);
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
+  const [exportScan, setExportScan] = useState<ScanRow | null>(null);
+
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
