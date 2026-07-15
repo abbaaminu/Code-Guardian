@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { listScans, runScan } from "@/lib/scan.functions";
 
-import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown } from "lucide-react";
+import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown, GitBranch } from "lucide-react";
 import type { Severity } from "@/lib/severity";
 
 
