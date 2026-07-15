@@ -24,10 +24,11 @@ interface VulnRaw {
   line_end?: unknown;
 }
 
-function serverSupabase() {
-  const url = process.env.SUPABASE_URL!;
-  const key = process.env.SUPABASE_PUBLISHABLE_KEY!;
-  return createClient<Database>(url, key, {
+async function serverSupabase() {
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  return supabaseAdmin;
+}
+
     auth: { storage: undefined, persistSession: false, autoRefreshToken: false },
   });
 }
