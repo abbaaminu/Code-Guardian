@@ -1,15 +1,17 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CodeVault } from "@/components/code-vault";
 import { VulnCard, type VulnCardData } from "@/components/vuln-card";
-import { supabase } from "@/integrations/supabase/client";
+import { getScanReport } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import type { Severity } from "@/lib/severity";
+
 
 interface Scan {
   id: string;
@@ -46,19 +48,18 @@ function ScanReport() {
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const fetchReport = useServerFn(getScanReport);
   const { data, isLoading } = useQuery({
     queryKey: ["scan", id],
     queryFn: async () => {
-      const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
-        supabase.from("scans").select("*").eq("id", id).single(),
-        supabase.from("vulnerabilities").select("*").eq("scan_id", id).order("severity"),
-      ]);
-      if (e1) throw e1;
-      if (!scan) throw notFound();
-      if (e2) throw e2;
-      return { scan: scan as unknown as Scan, vulns: (vulns ?? []) as unknown as VulnCardData[] };
+      const res = await fetchReport({ data: { id } });
+      return {
+        scan: res.scan as unknown as Scan,
+        vulns: res.vulns as unknown as VulnCardData[],
+      };
     },
   });
+
 
   const highlights = useMemo(() => {
     if (!data) return [];

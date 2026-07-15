@@ -1,11 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { supabase } from "@/integrations/supabase/client";
+import { listPolicies, togglePolicy } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ShieldCheck } from "lucide-react";
+
 
 interface Policy {
   id: string;
@@ -27,21 +29,23 @@ export const Route = createFileRoute("/policies")({
 
 function Policies() {
   const qc = useQueryClient();
+  const listFn = useServerFn(listPolicies);
+  const toggleFn = useServerFn(togglePolicy);
   const { data: policies = [], isLoading } = useQuery({
     queryKey: ["policies"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("policies").select("*").order("category").order("name");
-      if (error) throw error;
-      return (data ?? []) as unknown as Policy[];
-    },
+    queryFn: async () => (await listFn()) as unknown as Policy[],
   });
 
   const toggle = async (p: Policy, next: boolean) => {
-    const { error } = await supabase.from("policies").update({ enabled: next }).eq("id", p.id);
-    if (error) return toast.error(error.message);
-    toast.success(`${p.name} ${next ? "enabled" : "disabled"}`);
-    await qc.invalidateQueries({ queryKey: ["policies"] });
+    try {
+      await toggleFn({ data: { id: p.id, enabled: next } });
+      toast.success(`${p.name} ${next ? "enabled" : "disabled"}`);
+      await qc.invalidateQueries({ queryKey: ["policies"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
+
 
   const grouped = policies.reduce<Record<string, Policy[]>>((acc, p) => {
     (acc[p.category] ??= []).push(p);

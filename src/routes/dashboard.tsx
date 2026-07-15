@@ -13,8 +13,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
-import { supabase } from "@/integrations/supabase/client";
-import { runScan } from "@/lib/scan.functions";
+import { listScans, runScan } from "@/lib/scan.functions";
+
 import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2 } from "lucide-react";
 import type { Severity } from "@/lib/severity";
 
@@ -43,21 +43,15 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const qc = useQueryClient();
   const run = useServerFn(runScan);
+  const list = useServerFn(listScans);
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("scans")
-        .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
-        .order("created_at", { ascending: false })
-        .limit(50);
-      if (error) throw error;
-      return (data ?? []) as unknown as ScanRow[];
-    },
+    queryFn: async () => (await list()) as unknown as ScanRow[],
   });
+
 
   const scanMutation = useMutation({
     mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) =>
