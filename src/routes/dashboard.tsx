@@ -189,9 +189,15 @@ function Dashboard() {
           </Card>
         </section>
       </div>
+      <ReportExportDialog
+        scan={exportScan}
+        open={exportScan !== null}
+        onOpenChange={(v) => { if (!v) setExportScan(null); }}
+      />
     </AppShell>
   );
 }
+
 
 function StatCards({ total, critical, avgHealth }: { total: number; critical: number; avgHealth: number }) {
   const cards = [
