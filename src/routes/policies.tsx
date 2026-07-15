@@ -29,21 +29,23 @@ export const Route = createFileRoute("/policies")({
 
 function Policies() {
   const qc = useQueryClient();
+  const listFn = useServerFn(listPolicies);
+  const toggleFn = useServerFn(togglePolicy);
   const { data: policies = [], isLoading } = useQuery({
     queryKey: ["policies"],
-    queryFn: async () => {
-      const { data, error } = await supabase.from("policies").select("*").order("category").order("name");
-      if (error) throw error;
-      return (data ?? []) as unknown as Policy[];
-    },
+    queryFn: async () => (await listFn()) as unknown as Policy[],
   });
 
   const toggle = async (p: Policy, next: boolean) => {
-    const { error } = await supabase.from("policies").update({ enabled: next }).eq("id", p.id);
-    if (error) return toast.error(error.message);
-    toast.success(`${p.name} ${next ? "enabled" : "disabled"}`);
-    await qc.invalidateQueries({ queryKey: ["policies"] });
+    try {
+      await toggleFn({ data: { id: p.id, enabled: next } });
+      toast.success(`${p.name} ${next ? "enabled" : "disabled"}`);
+      await qc.invalidateQueries({ queryKey: ["policies"] });
+    } catch (e) {
+      toast.error((e as Error).message);
+    }
   };
+
 
   const grouped = policies.reduce<Record<string, Policy[]>>((acc, p) => {
     (acc[p.category] ??= []).push(p);
