@@ -135,7 +135,7 @@ ${code}
 export const runScan = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) => ScanInput.parse(input))
   .handler(async ({ data }) => {
-    const supabase = serverSupabase();
+    const supabase = await serverSupabase();
 
     // Load enabled policies to steer the scan.
     const { data: policyRows } = await supabase.from("policies").select("name").eq("enabled", true);
