@@ -13,10 +13,20 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
+import { ScanAnalytics } from "@/components/scan-analytics";
+import { ReportExportDialog } from "@/components/report-export-dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { listScans, runScan } from "@/lib/scan.functions";
 
-import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2 } from "lucide-react";
+import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown } from "lucide-react";
 import type { Severity } from "@/lib/severity";
+
 
 interface ScanRow {
   id: string;
@@ -46,6 +56,8 @@ function Dashboard() {
   const list = useServerFn(listScans);
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
+  const [exportScan, setExportScan] = useState<ScanRow | null>(null);
+
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
@@ -93,10 +105,12 @@ function Dashboard() {
       }
     >
       <div className="grid-bg border-b border-border/60">
-        <div className="mx-auto max-w-7xl px-6 py-8">
+        <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
           <StatCards {...totals} />
+          <ScanAnalytics scans={scans} />
         </div>
       </div>
+
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
         {showSimulator ? (
@@ -145,12 +159,28 @@ function Dashboard() {
                       <TableCell>{top ? <SeverityBadge severity={top} /> : <span className="text-xs text-muted-foreground">clean</span>}</TableCell>
                       <TableCell><HealthBar score={s.health_score} /></TableCell>
                       <TableCell className="text-right">
-                        <Button asChild variant="ghost" size="sm">
-                          <Link to="/scans/$id" params={{ id: s.id }}>
-                            Report <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              Report <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem asChild>
+                              <Link to="/scans/$id" params={{ id: s.id }} className="cursor-pointer">
+                                <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                                View online workspace
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setExportScan(s)} className="cursor-pointer">
+                              <FileDown className="mr-2 h-3.5 w-3.5" />
+                              Export executive summary
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
+
                     </TableRow>
                   );
                 })}
@@ -159,9 +189,15 @@ function Dashboard() {
           </Card>
         </section>
       </div>
+      <ReportExportDialog
+        scan={exportScan}
+        open={exportScan !== null}
+        onOpenChange={(v) => { if (!v) setExportScan(null); }}
+      />
     </AppShell>
   );
 }
+
 
 function StatCards({ total, critical, avgHealth }: { total: number; critical: number; avgHealth: number }) {
   const cards = [
