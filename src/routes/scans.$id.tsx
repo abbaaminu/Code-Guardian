@@ -48,19 +48,18 @@ function ScanReport() {
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
+  const fetchReport = useServerFn(getScanReport);
   const { data, isLoading } = useQuery({
     queryKey: ["scan", id],
     queryFn: async () => {
-      const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
-        supabase.from("scans").select("*").eq("id", id).single(),
-        supabase.from("vulnerabilities").select("*").eq("scan_id", id).order("severity"),
-      ]);
-      if (e1) throw e1;
-      if (!scan) throw notFound();
-      if (e2) throw e2;
-      return { scan: scan as unknown as Scan, vulns: (vulns ?? []) as unknown as VulnCardData[] };
+      const res = await fetchReport({ data: { id } });
+      return {
+        scan: res.scan as unknown as Scan,
+        vulns: res.vulns as unknown as VulnCardData[],
+      };
     },
   });
+
 
   const highlights = useMemo(() => {
     if (!data) return [];
