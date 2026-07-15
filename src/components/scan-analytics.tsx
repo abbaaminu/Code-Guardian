@@ -26,10 +26,10 @@ interface ScanRow {
 }
 
 const SEV_COLORS: Record<Severity, string> = {
-  critical: "hsl(var(--critical))",
-  high: "hsl(var(--high))",
-  medium: "hsl(var(--medium))",
-  low: "hsl(var(--low))",
+  critical: "var(--critical)",
+  high: "var(--high)",
+  medium: "var(--medium)",
+  low: "var(--low)",
 };
 
 function totalVulns(c: Record<Severity, number> | undefined) {
@@ -115,28 +115,28 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
                   </linearGradient>
                 ))}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.35} vertical={false} />
+              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.35} vertical={false} />
               <XAxis
                 dataKey="label"
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
                 interval={1}
               />
               <YAxis
-                tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                 axisLine={false}
                 tickLine={false}
                 allowDecimals={false}
               />
               <Tooltip
                 contentStyle={{
-                  background: "hsl(var(--card))",
-                  border: "1px solid hsl(var(--border))",
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
                   borderRadius: 8,
                   fontSize: 12,
                 }}
-                labelStyle={{ color: "hsl(var(--muted-foreground))" }}
+                labelStyle={{ color: "var(--muted-foreground)" }}
               />
               {(["low", "medium", "high", "critical"] as Severity[]).map((s) => (
                 <Area
@@ -170,21 +170,21 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={byLanguage} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" strokeOpacity={0.35} horizontal={false} />
-                <XAxis type="number" tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.35} horizontal={false} />
+                <XAxis type="number" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
                 <YAxis
                   type="category"
                   dataKey="language"
-                  tick={{ fill: "hsl(var(--muted-foreground))", fontSize: 10 }}
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
                   axisLine={false}
                   tickLine={false}
                   width={72}
                 />
                 <Tooltip
-                  cursor={{ fill: "hsl(var(--muted) / 0.3)" }}
+                  cursor={{ fill: "color-mix(in oklch, var(--muted) 30%, transparent)" }}
                   contentStyle={{
-                    background: "hsl(var(--card))",
-                    border: "1px solid hsl(var(--border))",
+                    background: "var(--card)",
+                    border: "1px solid var(--border)",
                     borderRadius: 8,
                     fontSize: 12,
                   }}
