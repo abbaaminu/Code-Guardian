@@ -159,12 +159,28 @@ function Dashboard() {
                       <TableCell>{top ? <SeverityBadge severity={top} /> : <span className="text-xs text-muted-foreground">clean</span>}</TableCell>
                       <TableCell><HealthBar score={s.health_score} /></TableCell>
                       <TableCell className="text-right">
-                        <Button asChild variant="ghost" size="sm">
-                          <Link to="/scans/$id" params={{ id: s.id }}>
-                            Report <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                          </Link>
-                        </Button>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button variant="ghost" size="sm">
+                              Report <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="w-56">
+                            <DropdownMenuItem asChild>
+                              <Link to="/scans/$id" params={{ id: s.id }} className="cursor-pointer">
+                                <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                                View online workspace
+                              </Link>
+                            </DropdownMenuItem>
+                            <DropdownMenuSeparator />
+                            <DropdownMenuItem onSelect={() => setExportScan(s)} className="cursor-pointer">
+                              <FileDown className="mr-2 h-3.5 w-3.5" />
+                              Export executive summary
+                            </DropdownMenuItem>
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </TableCell>
+
                     </TableRow>
                   );
                 })}
