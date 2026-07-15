@@ -301,6 +301,7 @@ function ScanForm({
         <TabsList className="bg-muted/50">
           <TabsTrigger value="paste"><Terminal className="mr-1.5 h-3.5 w-3.5" />Paste code</TabsTrigger>
           <TabsTrigger value="upload"><Upload className="mr-1.5 h-3.5 w-3.5" />Upload file</TabsTrigger>
+          <TabsTrigger value="repo"><GitBranch className="mr-1.5 h-3.5 w-3.5" />Connect repository</TabsTrigger>
         </TabsList>
         <TabsContent value="paste" className="mt-3">
           <Textarea
@@ -326,7 +327,11 @@ function ScanForm({
             {code && <div className="text-xs text-muted-foreground">Loaded {code.length.toLocaleString()} characters</div>}
           </div>
         </TabsContent>
+        <TabsContent value="repo" className="mt-3">
+          <ConnectRepositoryPanel submitting={submitting} onSubmit={onSubmit} />
+        </TabsContent>
       </Tabs>
+
 
       <div className="mt-4 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Enterprise, non-training tier · payloads isolated from model training data.</p>
