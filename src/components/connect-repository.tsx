@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Check, Loader2, Lock, Search, Star, GitBranch, ShieldCheck } from "lucide-react";
+import { Check, Loader2, Lock, Search, Star, GitBranch, ShieldCheck, Sparkles } from "lucide-react";
 
 export interface RepoSubmission {
   project_name: string;
@@ -21,9 +21,88 @@ interface MockRepo {
   source: string;
 }
 
-const MOCK_ORGS = ["acme-corp", "acme-labs"];
-
 const MOCK_REPOS: MockRepo[] = [
+  {
+    name: "payments-gateway",
+    org: "acme-corp",
+    language: "Node.js",
+    stars: 92,
+    branch: "main",
+    visibility: "private",
+    updated: "5h ago",
+    source: `// payments-gateway / routes/charge.js
+const express = require("express");
+const mysql = require("mysql");
+const router = express.Router();
+
+const db = mysql.createConnection({ host: "db", user: "root", password: "root", database: "pay" });
+
+router.post("/charge", (req, res) => {
+  const amount = req.body.amount;
+  const user = req.body.user;
+  const q = "INSERT INTO charges (user, amount) VALUES ('" + user + "', " + amount + ")";
+  db.query(q, (err) => {
+    if (err) return res.status(500).send(err.message);
+    res.send("ok");
+  });
+});
+
+module.exports = router;
+`,
+  },
+  {
+    name: "user-auth-service",
+    org: "acme-corp",
+    language: "Python",
+    stars: 61,
+    branch: "develop",
+    visibility: "private",
+    updated: "yesterday",
+    source: `# user-auth-service / app/login.py
+import hashlib, pickle, base64
+from flask import Flask, request, redirect
+
+app = Flask(__name__)
+SECRET = "supersecret"
+
+@app.route("/login", methods=["POST"])
+def login():
+    user = request.form["user"]
+    pw = request.form["password"]
+    hashed = hashlib.md5(pw.encode()).hexdigest()
+    session = pickle.loads(base64.b64decode(request.cookies.get("s", "")))
+    if session.get("user") == user and hashed == session.get("h"):
+        return redirect(request.args.get("next"))
+    return "denied"
+`,
+  },
+  {
+    name: "solidity-smart-contracts",
+    org: "acme-labs",
+    language: "Solidity",
+    stars: 34,
+    branch: "main",
+    visibility: "public",
+    updated: "3d ago",
+    source: `// solidity-smart-contracts / contracts/Vault.sol
+pragma solidity ^0.7.0;
+
+contract Vault {
+    mapping(address => uint) public balances;
+
+    function deposit() public payable {
+        balances[msg.sender] += msg.value;
+    }
+
+    function withdraw(uint amount) public {
+        require(balances[msg.sender] >= amount);
+        (bool ok, ) = msg.sender.call{value: amount}("");
+        require(ok);
+        balances[msg.sender] -= amount;
+    }
+}
+`,
+  },
   {
     name: "frontend-main",
     org: "acme-corp",
@@ -47,87 +126,6 @@ export function renderProfile(html) {
 `,
   },
   {
-    name: "payments-api",
-    org: "acme-corp",
-    language: "Node.js",
-    stars: 92,
-    branch: "main",
-    visibility: "private",
-    updated: "5h ago",
-    source: `// payments-api / routes/charge.js
-const express = require("express");
-const mysql = require("mysql");
-const router = express.Router();
-
-const db = mysql.createConnection({ host: "db", user: "root", password: "root", database: "pay" });
-
-router.post("/charge", (req, res) => {
-  const amount = req.body.amount;
-  const user = req.body.user;
-  const q = "INSERT INTO charges (user, amount) VALUES ('" + user + "', " + amount + ")";
-  db.query(q, (err) => {
-    if (err) return res.status(500).send(err.message);
-    res.send("ok");
-  });
-});
-
-module.exports = router;
-`,
-  },
-  {
-    name: "auth-service-v2",
-    org: "acme-corp",
-    language: "Python",
-    stars: 61,
-    branch: "develop",
-    visibility: "private",
-    updated: "yesterday",
-    source: `# auth-service-v2 / app/login.py
-import hashlib, pickle, base64
-from flask import Flask, request, redirect
-
-app = Flask(__name__)
-SECRET = "supersecret"
-
-@app.route("/login", methods=["POST"])
-def login():
-    user = request.form["user"]
-    pw = request.form["password"]
-    hashed = hashlib.md5(pw.encode()).hexdigest()
-    session = pickle.loads(base64.b64decode(request.cookies.get("s", "")))
-    if session.get("user") == user and hashed == session.get("h"):
-        return redirect(request.args.get("next"))
-    return "denied"
-`,
-  },
-  {
-    name: "smart-contracts",
-    org: "acme-labs",
-    language: "Solidity",
-    stars: 34,
-    branch: "main",
-    visibility: "public",
-    updated: "3d ago",
-    source: `// smart-contracts / contracts/Vault.sol
-pragma solidity ^0.7.0;
-
-contract Vault {
-    mapping(address => uint) public balances;
-
-    function deposit() public payable {
-        balances[msg.sender] += msg.value;
-    }
-
-    function withdraw(uint amount) public {
-        require(balances[msg.sender] >= amount);
-        (bool ok, ) = msg.sender.call{value: amount}("");
-        require(ok);
-        balances[msg.sender] -= amount;
-    }
-}
-`,
-  },
-  {
     name: "infra-terraform",
     org: "acme-corp",
     language: "Docker",
@@ -142,24 +140,6 @@ ENV AWS_SECRET_ACCESS_KEY=AKIAABCDEFGHIJKLMNOP
 COPY . /app
 USER root
 CMD ["/app/run.sh"]
-`,
-  },
-  {
-    name: "data-pipeline",
-    org: "acme-labs",
-    language: "Python",
-    stars: 18,
-    branch: "main",
-    visibility: "private",
-    updated: "2w ago",
-    source: `# data-pipeline / etl/run.py
-import os, subprocess
-def sync(source):
-    cmd = "rsync -av " + source + " /data/"
-    subprocess.call(cmd, shell=True)  # command injection via 'source'
-
-if __name__ == "__main__":
-    sync(os.environ.get("SRC", "/tmp/x"))
 `,
   },
 ];
@@ -200,9 +180,30 @@ export function ConnectRepositoryPanel({
   const [provider, setProvider] = useState<"github" | "gitlab" | "bitbucket" | null>(null);
 
   const providers = [
-    { id: "github" as const, name: "GitHub", Icon: GitHubMark, tint: "text-foreground", available: true },
-    { id: "gitlab" as const, name: "GitLab", Icon: GitLabMark, tint: "", available: false },
-    { id: "bitbucket" as const, name: "Bitbucket", Icon: BitbucketMark, tint: "", available: false },
+    {
+      id: "github" as const,
+      name: "GitHub",
+      Icon: GitHubMark,
+      iconClass: "text-foreground",
+      glowClass: "hover:shadow-[0_0_32px_-6px_oklch(0.9_0_0/0.45)] hover:border-foreground/40",
+      available: true,
+    },
+    {
+      id: "gitlab" as const,
+      name: "GitLab",
+      Icon: GitLabMark,
+      iconClass: "",
+      glowClass: "hover:shadow-[0_0_32px_-6px_oklch(0.62_0.22_35/0.55)] hover:border-[oklch(0.62_0.22_35/0.55)]",
+      available: false,
+    },
+    {
+      id: "bitbucket" as const,
+      name: "Bitbucket",
+      Icon: BitbucketMark,
+      iconClass: "",
+      glowClass: "hover:shadow-[0_0_32px_-6px_oklch(0.62_0.22_255/0.55)] hover:border-[oklch(0.62_0.22_255/0.55)]",
+      available: false,
+    },
   ];
 
   return (
@@ -221,13 +222,13 @@ export function ConnectRepositoryPanel({
               type="button"
               onClick={() => p.available && setProvider(p.id)}
               disabled={!p.available}
-              className={`group relative flex flex-col items-start gap-3 rounded-lg border p-4 text-left transition-all ${
+              className={`group relative flex flex-col items-start gap-3 rounded-lg border p-4 text-left transition-all duration-300 ${
                 p.available
-                  ? "border-border/70 bg-card/60 hover:border-primary/50 hover:bg-card hover:glow-primary"
+                  ? `border-border/70 bg-card/60 hover:-translate-y-0.5 hover:bg-card ${p.glowClass}`
                   : "cursor-not-allowed border-border/50 bg-card/30 opacity-60"
               }`}
             >
-              <p.Icon className={`h-7 w-7 ${p.tint}`} />
+              <p.Icon className={`h-7 w-7 transition-transform group-hover:scale-110 ${p.iconClass}`} />
               <div>
                 <div className="text-sm font-medium">{p.name}</div>
                 <div className="mt-0.5 text-[11px] text-muted-foreground">
@@ -272,41 +273,45 @@ function GitHubConnectDialog({
   submitting: boolean;
   onScan: (repo: MockRepo) => void;
 }) {
-  const [step, setStep] = useState<0 | 1 | 2>(0);
-  const [org, setOrg] = useState<string>(MOCK_ORGS[0]);
-  const [busy, setBusy] = useState<"org" | "grant" | null>(null);
+  const [step, setStep] = useState<0 | 1>(0);
+  const [authorizing, setAuthorizing] = useState(false);
   const [query, setQuery] = useState("");
+  const [selected, setSelected] = useState<string | null>(null);
 
-  const advance = async (next: 1 | 2, key: "org" | "grant") => {
-    setBusy(key);
-    await new Promise((r) => setTimeout(r, 600));
-    setBusy(null);
-    setStep(next);
+  const reset = () => {
+    setStep(0);
+    setAuthorizing(false);
+    setQuery("");
+    setSelected(null);
+  };
+
+  const handleAuthorize = async () => {
+    setAuthorizing(true);
+    await new Promise((r) => setTimeout(r, 900));
+    setAuthorizing(false);
+    setStep(1);
   };
 
   const repos = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return MOCK_REPOS.filter((r) => r.org === org).filter(
+    return MOCK_REPOS.filter(
       (r) => !q || r.name.toLowerCase().includes(q) || r.language.toLowerCase().includes(q),
     );
-  }, [org, query]);
+  }, [query]);
 
   const steps = [
-    { label: "Select organization", done: step > 0 },
-    { label: "Grant repository permissions (read-only)", done: step > 1 },
+    { label: "Verify identity", done: step > 0 },
     { label: "Select repositories", done: false },
   ];
+
+  const selectedRepo = MOCK_REPOS.find((r) => `${r.org}/${r.name}` === selected) ?? null;
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
         onOpenChange(v);
-        if (!v) {
-          setStep(0);
-          setQuery("");
-          setBusy(null);
-        }
+        if (!v) reset();
       }}
     >
       <DialogContent className="max-w-2xl overflow-hidden p-0">
@@ -314,34 +319,35 @@ function GitHubConnectDialog({
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2 text-base">
               <GitHubMark className="h-4 w-4" />
-              SecurePulse · GitHub App authorization
+              SecurePulse OAuth Connection
             </DialogTitle>
             <DialogDescription>
-              Grant SecurePulse read-only access to scan repositories for vulnerabilities and compliance drift.
+              Authorize SecurePulse to scan repositories for vulnerabilities and compliance drift.
             </DialogDescription>
           </DialogHeader>
         </div>
 
         <div className="border-b border-border/60 px-6 py-4">
-          <ol className="grid gap-2">
+          <ol className="flex items-center gap-3">
             {steps.map((s, i) => {
               const active = step === i;
               return (
-                <li key={s.label} className="flex items-center gap-3">
+                <li key={s.label} className="flex flex-1 items-center gap-2">
                   <span
                     className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full border text-[11px] font-medium tabular-nums ${
                       s.done
                         ? "border-low/50 bg-low/15 text-low"
                         : active
-                          ? "border-primary/50 bg-primary/15 text-primary"
+                          ? "border-primary/60 bg-primary/15 text-primary glow-primary"
                           : "border-border/60 bg-muted/40 text-muted-foreground"
                     }`}
                   >
                     {s.done ? <Check className="h-3 w-3" /> : i + 1}
                   </span>
-                  <span className={`text-xs ${active ? "text-foreground" : s.done ? "text-muted-foreground line-through" : "text-muted-foreground"}`}>
+                  <span className={`text-xs ${active ? "text-foreground font-medium" : s.done ? "text-muted-foreground" : "text-muted-foreground"}`}>
                     {s.label}
                   </span>
+                  {i < steps.length - 1 && <span className="ml-1 h-px flex-1 bg-border/60" />}
                 </li>
               );
             })}
@@ -350,83 +356,75 @@ function GitHubConnectDialog({
 
         <div className="max-h-[52vh] overflow-auto px-6 py-5">
           {step === 0 && (
-            <div className="space-y-3">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Organizations</div>
-              <div className="grid gap-2">
-                {MOCK_ORGS.map((o) => (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => setOrg(o)}
-                    className={`flex items-center justify-between rounded-md border px-3 py-2.5 text-left text-sm transition-colors ${
-                      org === o ? "border-primary/60 bg-primary/5" : "border-border/60 bg-muted/20 hover:border-border"
-                    }`}
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <div className="flex h-6 w-6 items-center justify-center rounded-md bg-muted/60 text-[10px] font-semibold uppercase">
-                        {o[0]}
-                      </div>
-                      <div>
-                        <div className="text-sm">{o}</div>
-                        <div className="text-[10px] text-muted-foreground">
-                          {MOCK_REPOS.filter((r) => r.org === o).length} repositories
-                        </div>
-                      </div>
-                    </div>
-                    {org === o && <Check className="h-4 w-4 text-primary" />}
-                  </button>
-                ))}
+            <div className="space-y-4 animate-fade-in">
+              <div className="rounded-lg border border-border/60 bg-muted/20 p-4">
+                <div className="flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-foreground/5">
+                    <GitHubMark className="h-6 w-6" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium">SecurePulse wants to access your GitHub</div>
+                    <div className="text-[11px] text-muted-foreground">Signed in as <span className="font-medium text-foreground">@you</span> · acme-corp</div>
+                  </div>
+                </div>
               </div>
+
+              <div>
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Requested permissions</div>
+                <ul className="space-y-2">
+                  {[
+                    { icon: Lock, label: "Code — Read", desc: "Read source files for static analysis." },
+                    { icon: GitBranch, label: "Metadata — Read", desc: "List branches, commits, repo topology." },
+                    { icon: ShieldCheck, label: "Secret scanning alerts — Read", desc: "Correlate SecurePulse findings with native alerts." },
+                  ].map((p) => (
+                    <li key={p.label} className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/20 p-3">
+                      <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
+                        <p.icon className="h-3.5 w-3.5" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium">{p.label}</div>
+                        <p className="text-[11px] text-muted-foreground">{p.desc}</p>
+                      </div>
+                      <Check className="ml-auto h-4 w-4 shrink-0 text-low" />
+                    </li>
+                  ))}
+                </ul>
+                <p className="mt-2 text-[11px] text-muted-foreground">
+                  SecurePulse never requests write access. You can revoke anytime from GitHub → Settings → Applications.
+                </p>
+              </div>
+
               <div className="flex justify-end pt-1">
-                <Button size="sm" onClick={() => advance(1, "org")} disabled={busy !== null}>
-                  {busy === "org" ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Verifying…</> : "Continue"}
+                <Button
+                  size="sm"
+                  onClick={handleAuthorize}
+                  disabled={authorizing}
+                  className="glow-primary gap-1.5"
+                >
+                  {authorizing ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />Redirecting to GitHub…</>
+                  ) : (
+                    <><ShieldCheck className="h-3.5 w-3.5" />Authorize SecurePulse</>
+                  )}
                 </Button>
               </div>
             </div>
           )}
 
           {step === 1 && (
-            <div className="space-y-3">
-              <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">Requested permissions</div>
-              <ul className="space-y-2">
-                {[
-                  { icon: Lock, label: "Code — Read", desc: "Clone repositories and read source files for static analysis." },
-                  { icon: GitBranch, label: "Metadata — Read", desc: "List branches, commits, and repository topology." },
-                  { icon: ShieldCheck, label: "Secret scanning alerts — Read", desc: "Correlate SecurePulse findings with GitHub-native alerts." },
-                ].map((p) => (
-                  <li key={p.label} className="flex items-start gap-3 rounded-md border border-border/60 bg-muted/20 p-3">
-                    <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-md bg-primary/15 text-primary">
-                      <p.icon className="h-3.5 w-3.5" />
-                    </div>
-                    <div>
-                      <div className="text-xs font-medium">{p.label}</div>
-                      <p className="text-[11px] text-muted-foreground">{p.desc}</p>
-                    </div>
-                    <Check className="ml-auto h-4 w-4 text-low" />
-                  </li>
-                ))}
-              </ul>
-              <p className="text-[11px] text-muted-foreground">
-                SecurePulse never requests write access. Access can be revoked from GitHub → Settings → Applications.
-              </p>
-              <div className="flex justify-between pt-1">
-                <Button variant="ghost" size="sm" onClick={() => setStep(0)}>Back</Button>
-                <Button size="sm" onClick={() => advance(2, "grant")} disabled={busy !== null} className="glow-primary">
-                  {busy === "grant" ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Granting…</> : "Grant read-only access"}
-                </Button>
+            <div className="space-y-3 animate-fade-in">
+              <div className="flex items-center gap-2 rounded-md border border-low/40 bg-low/10 px-3 py-2 text-[11px] text-low">
+                <Check className="h-3.5 w-3.5" />
+                Identity verified · read-only token issued
               </div>
-            </div>
-          )}
 
-          {step === 2 && (
-            <div className="space-y-3">
               <div className="flex items-center gap-2">
                 <div className="relative flex-1">
                   <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
-                    placeholder={`Search ${org} repositories…`}
+                    placeholder="Search repositories…"
                     className="pl-8"
                   />
                 </div>
@@ -439,40 +437,62 @@ function GitHubConnectDialog({
                     No repositories match "{query}"
                   </div>
                 )}
-                {repos.map((r) => (
-                  <div
-                    key={`${r.org}/${r.name}`}
-                    className="flex items-center justify-between gap-3 rounded-md border border-border/60 bg-card/60 p-3"
-                  >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="truncate text-sm font-medium">{r.org}/{r.name}</span>
-                        <span className="rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-muted-foreground">
-                          {r.visibility}
-                        </span>
-                      </div>
-                      <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
-                        <span>{r.language}</span>
-                        <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />{r.branch}</span>
-                        <span className="flex items-center gap-1"><Star className="h-3 w-3" />{r.stars}</span>
-                        <span>updated {r.updated}</span>
-                      </div>
-                    </div>
-                    <Button
-                      size="sm"
-                      onClick={() => onScan(r)}
-                      disabled={submitting}
-                      className="shrink-0"
+                {repos.map((r) => {
+                  const key = `${r.org}/${r.name}`;
+                  const isSelected = selected === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setSelected(isSelected ? null : key)}
+                      className={`flex w-full items-center justify-between gap-3 rounded-md border p-3 text-left transition-all ${
+                        isSelected
+                          ? "border-primary/60 bg-primary/5 glow-primary"
+                          : "border-border/60 bg-card/60 hover:border-border"
+                      }`}
                     >
-                      {submitting ? <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Queuing…</> : "Connect & scan"}
-                    </Button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span
+                          className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border ${
+                            isSelected ? "border-primary bg-primary text-primary-foreground" : "border-border/70 bg-muted/40"
+                          }`}
+                        >
+                          {isSelected && <Check className="h-3 w-3" />}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="truncate text-sm font-medium">{r.org}/{r.name}</span>
+                            <span className="rounded-full border border-border/60 bg-muted/40 px-1.5 py-0.5 text-[9px] uppercase tracking-widest text-muted-foreground">
+                              {r.visibility}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                            <span>{r.language}</span>
+                            <span className="flex items-center gap-1"><GitBranch className="h-3 w-3" />{r.branch}</span>
+                            <span className="flex items-center gap-1"><Star className="h-3 w-3" />{r.stars}</span>
+                            <span>updated {r.updated}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
 
-              <div className="flex justify-between pt-1">
-                <Button variant="ghost" size="sm" onClick={() => setStep(1)}>Back</Button>
-                <span className="text-[10px] text-muted-foreground">Enterprise, non-training tier</span>
+              <div className="flex items-center justify-between pt-2">
+                <Button variant="ghost" size="sm" onClick={() => setStep(0)}>Back</Button>
+                <Button
+                  size="sm"
+                  onClick={() => selectedRepo && onScan(selectedRepo)}
+                  disabled={submitting || !selectedRepo}
+                  className="glow-primary gap-1.5"
+                >
+                  {submitting ? (
+                    <><Loader2 className="h-3.5 w-3.5 animate-spin" />Queuing…</>
+                  ) : (
+                    <><Sparkles className="h-3.5 w-3.5" />Import & Scan</>
+                  )}
+                </Button>
               </div>
             </div>
           )}
