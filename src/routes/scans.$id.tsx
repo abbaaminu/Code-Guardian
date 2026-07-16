@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { CodeVault } from "@/components/code-vault";
 import { VulnCard, type VulnCardData } from "@/components/vuln-card";
+import { WorkspaceActionBar } from "@/components/workspace-action-bar";
 import { getScanReport } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
@@ -191,6 +192,12 @@ function ScanReport() {
           </div>
         </aside>
       </div>
+      <WorkspaceActionBar
+        scanId={scan.id}
+        projectName={scan.project_name}
+        appliedCount={appliedCount}
+        totalFindings={vulns.length}
+      />
     </AppShell>
   );
 }

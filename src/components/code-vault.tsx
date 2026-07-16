@@ -44,8 +44,8 @@ function tokenize(line: string): Array<{ t: string; c?: string }> {
 
 function sevBg(sev: Severity) {
   switch (sev) {
-    case "critical": return "bg-critical/20 border-l-2 border-critical";
-    case "high": return "bg-high/15 border-l-2 border-high";
+    case "critical": return "bg-critical/20 border-l-2 border-critical shadow-[inset_0_0_24px_-6px_var(--critical)]";
+    case "high": return "bg-high/15 border-l-2 border-high shadow-[inset_0_0_18px_-8px_var(--high)]";
     case "medium": return "bg-medium/15 border-l-2 border-medium";
     case "low": return "bg-low/15 border-l-2 border-low";
   }
