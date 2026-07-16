@@ -192,6 +192,12 @@ function ScanReport() {
           </div>
         </aside>
       </div>
+      <WorkspaceActionBar
+        scanId={scan.id}
+        projectName={scan.project_name}
+        appliedCount={appliedCount}
+        totalFindings={vulns.length}
+      />
     </AppShell>
   );
 }
