@@ -25,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { listScans, runScan } from "@/lib/scan.functions";
+import { cn } from "@/lib/utils";
+import { AlertCircle } from "lucide-react";
 
 import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown, GitBranch } from "lucide-react";
 import type { Severity } from "@/lib/severity";
@@ -252,15 +254,25 @@ function ScanForm({
   const [fileType, setFileType] = useState("Python");
   const [code, setCode] = useState("");
   const [tab, setTab] = useState("paste");
+  const [error, setError] = useState<string | null>(null);
+
+  const SUPPORTED_EXT = ["py","js","ts","tsx","jsx","sol","go","rb","java","php","cs","rs","sql","txt","json","yml","yaml","sh","env"];
+  const LANG_MAP: Record<string, string> = { py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "TypeScript", jsx: "JavaScript", sol: "Solidity", go: "Go", rb: "Ruby", java: "Java", php: "PHP", cs: "C#", rs: "Rust", dockerfile: "Docker", sql: "SQL" };
 
   const handleFile = useCallback(async (file: File) => {
+    setError(null);
+    const nameLower = file.name.toLowerCase();
+    const ext = nameLower.split(".").pop() ?? "";
+    const isDockerfile = nameLower === "dockerfile" || nameLower.endsWith(".dockerfile");
+    if (!isDockerfile && !SUPPORTED_EXT.includes(ext)) {
+      setError(`Unsupported file type ".${ext}". Try a source file such as .py, .js, .ts, .sol, .go, or a Dockerfile.`);
+      return;
+    }
     const text = await file.text();
     setCode(text.slice(0, 60000));
     if (!projectName) setProjectName(file.name);
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    const map: Record<string, string> = { py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "TypeScript", sol: "Solidity", go: "Go", rb: "Ruby", java: "Java", php: "PHP", cs: "C#", rs: "Rust", dockerfile: "Docker", sql: "SQL" };
-    if (ext && map[ext]) setFileType(map[ext]);
-    if (file.name.toLowerCase() === "dockerfile") setFileType("Docker");
+    if (isDockerfile) setFileType("Docker");
+    else if (LANG_MAP[ext]) setFileType(LANG_MAP[ext]);
   }, [projectName]);
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -274,8 +286,19 @@ function ScanForm({
   };
 
   const submit = () => {
-    if (!projectName.trim()) return toast.error("Give the scan a project name");
-    if (!code.trim()) return toast.error("Paste some code or upload a file first");
+    if (!projectName.trim()) {
+      setError("Give the scan a project name before running the audit.");
+      return;
+    }
+    if (!code.trim()) {
+      setError("Please paste valid source code to begin auditing.");
+      return;
+    }
+    if (code.trim().length < 10) {
+      setError("That snippet is too short to audit — paste at least a full function or file.");
+      return;
+    }
+    setError(null);
     onSubmit({ project_name: projectName.trim(), file_type: fileType, source_code: code });
   };
 
@@ -306,9 +329,12 @@ function ScanForm({
         <TabsContent value="paste" className="mt-3">
           <Textarea
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => { setCode(e.target.value); if (error) setError(null); }}
             placeholder="// Paste your source code here..."
-            className="min-h-[240px] bg-[oklch(0.13_0.02_250)] font-mono text-sm"
+            className={cn(
+              "min-h-[240px] bg-[oklch(0.13_0.02_250)] font-mono text-sm",
+              error && "border-critical/70 focus-visible:ring-critical/40",
+            )}
           />
         </TabsContent>
         <TabsContent value="upload" className="mt-3">
@@ -332,6 +358,16 @@ function ScanForm({
         </TabsContent>
       </Tabs>
 
+
+      {error && (
+        <div
+          role="alert"
+          className="mt-4 flex items-start gap-2 rounded-md border border-critical/50 bg-critical/10 px-3 py-2 text-[12px] text-critical animate-fade-in"
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
 
       <div className="mt-4 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Enterprise, non-training tier · payloads isolated from model training data.</p>

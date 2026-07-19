@@ -1,10 +1,11 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
 import { severityRing, type Severity } from "@/lib/severity";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { diffLines, type DiffRow } from "@/lib/diff";
 import { Copy, Wand2, ChevronDown, GitCompareArrows, Check } from "lucide-react";
 
 export interface VulnCardData {
@@ -28,31 +29,57 @@ interface Props {
   onApply: () => void;
 }
 
-function DiffPane({ label, code, tone }: { label: string; code: string; tone: "bad" | "good" }) {
-  const lines = code.split("\n");
-  const toneCls =
-    tone === "bad"
-      ? "border-critical/40 bg-critical/5"
-      : "border-low/40 bg-low/5";
-  const lineTone = tone === "bad" ? "bg-critical/10" : "bg-low/10";
-  const marker = tone === "bad" ? "text-critical" : "text-low";
+function AlignedDiff({ rows }: { rows: DiffRow[] }) {
+  const leftCls = (op: DiffRow["op"]) =>
+    op === "del" || op === "mod"
+      ? "bg-critical/15"
+      : op === "ins"
+      ? "bg-muted/30 opacity-50"
+      : "";
+  const rightCls = (op: DiffRow["op"]) =>
+    op === "ins" || op === "mod"
+      ? "bg-low/15"
+      : op === "del"
+      ? "bg-muted/30 opacity-50"
+      : "";
+  const marker = (side: "l" | "r", op: DiffRow["op"]) => {
+    if (side === "l") return op === "del" || op === "mod" ? "-" : op === "ins" ? " " : " ";
+    return op === "ins" || op === "mod" ? "+" : op === "del" ? " " : " ";
+  };
   return (
-    <div className={cn("rounded-md border overflow-hidden", toneCls)}>
-      <div className="flex items-center justify-between border-b border-border/40 px-2 py-1 text-[10px] uppercase tracking-widest">
-        <span className={tone === "bad" ? "text-critical" : "text-low"}>{label}</span>
-        <span className="text-muted-foreground">{lines.length} lines</span>
+    <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/40">
+      <div className="border-r border-border/40">
+        <div className="flex items-center justify-between border-b border-border/40 bg-critical/5 px-2 py-1 text-[10px] uppercase tracking-widest text-critical">
+          <span>Vulnerable</span>
+        </div>
+        <pre className="overflow-auto max-h-64 font-mono text-[11px] leading-relaxed">
+          <code className="block">
+            {rows.map((r, i) => (
+              <div key={i} className={cn("grid grid-cols-[1.75rem_1rem_1fr]", leftCls(r.op))}>
+                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">{r.leftNo ?? ""}</span>
+                <span className="select-none text-center text-critical">{marker("l", r.op)}</span>
+                <span className="whitespace-pre pr-2">{r.left ?? " "}</span>
+              </div>
+            ))}
+          </code>
+        </pre>
       </div>
-      <pre className="overflow-auto max-h-64 font-mono text-[11px] leading-relaxed">
-        <code className="block">
-          {lines.map((ln, i) => (
-            <div key={i} className={cn("grid grid-cols-[1.5rem_1rem_1fr]", lineTone)}>
-              <span className="select-none px-1 text-right text-muted-foreground/60">{i + 1}</span>
-              <span className={cn("select-none text-center", marker)}>{tone === "bad" ? "-" : "+"}</span>
-              <span className="whitespace-pre pr-2">{ln || " "}</span>
-            </div>
-          ))}
-        </code>
-      </pre>
+      <div>
+        <div className="flex items-center justify-between border-b border-border/40 bg-low/5 px-2 py-1 text-[10px] uppercase tracking-widest text-low">
+          <span>AI Fixed</span>
+        </div>
+        <pre className="overflow-auto max-h-64 font-mono text-[11px] leading-relaxed">
+          <code className="block">
+            {rows.map((r, i) => (
+              <div key={i} className={cn("grid grid-cols-[1.75rem_1rem_1fr]", rightCls(r.op))}>
+                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">{r.rightNo ?? ""}</span>
+                <span className="select-none text-center text-low">{marker("r", r.op)}</span>
+                <span className="whitespace-pre pr-2">{r.right ?? " "}</span>
+              </div>
+            ))}
+          </code>
+        </pre>
+      </div>
     </div>
   );
 }
@@ -62,6 +89,10 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
   ref,
 ) {
   const [diffOpen, setDiffOpen] = useState(true);
+  const diffRows = useMemo(
+    () => diffLines(vuln.vulnerable_code_block || "", vuln.fixed_code_block || ""),
+    [vuln.vulnerable_code_block, vuln.fixed_code_block],
+  );
 
   const copyPatch = async () => {
     await navigator.clipboard.writeText(vuln.fixed_code_block || "");
@@ -117,10 +148,7 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
           </div>
 
           {diffOpen && (
-            <div className="grid gap-2 md:grid-cols-2">
-              <DiffPane label="Vulnerable" code={vuln.vulnerable_code_block || "// —"} tone="bad" />
-              <DiffPane label="AI Fixed" code={vuln.fixed_code_block || "// —"} tone="good" />
-            </div>
+            <AlignedDiff rows={diffRows} />
           )}
 
           {vuln.remediation_steps && (
