@@ -25,6 +25,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { listScans, runScan } from "@/lib/scan.functions";
+import { cn } from "@/lib/utils";
+import { AlertCircle } from "lucide-react";
 
 import { Activity, ShieldAlert, ScanLine, Upload, Terminal, ArrowRight, Loader2, ChevronDown, ExternalLink, FileDown, GitBranch } from "lucide-react";
 import type { Severity } from "@/lib/severity";
