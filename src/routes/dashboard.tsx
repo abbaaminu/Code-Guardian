@@ -359,6 +359,16 @@ function ScanForm({
       </Tabs>
 
 
+      {error && (
+        <div
+          role="alert"
+          className="mt-4 flex items-start gap-2 rounded-md border border-critical/50 bg-critical/10 px-3 py-2 text-[12px] text-critical animate-fade-in"
+        >
+          <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <span>{error}</span>
+        </div>
+      )}
+
       <div className="mt-4 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">Enterprise, non-training tier · payloads isolated from model training data.</p>
         <Button onClick={submit} disabled={submitting} className="glow-primary">
