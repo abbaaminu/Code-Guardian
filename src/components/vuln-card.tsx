@@ -89,6 +89,10 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
   ref,
 ) {
   const [diffOpen, setDiffOpen] = useState(true);
+  const diffRows = useMemo(
+    () => diffLines(vuln.vulnerable_code_block || "", vuln.fixed_code_block || ""),
+    [vuln.vulnerable_code_block, vuln.fixed_code_block],
+  );
 
   const copyPatch = async () => {
     await navigator.clipboard.writeText(vuln.fixed_code_block || "");
