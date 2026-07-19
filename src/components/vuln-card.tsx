@@ -1,10 +1,11 @@
-import { forwardRef, useState } from "react";
+import { forwardRef, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
 import { severityRing, type Severity } from "@/lib/severity";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
+import { diffLines, type DiffRow } from "@/lib/diff";
 import { Copy, Wand2, ChevronDown, GitCompareArrows, Check } from "lucide-react";
 
 export interface VulnCardData {
