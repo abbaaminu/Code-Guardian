@@ -252,15 +252,25 @@ function ScanForm({
   const [fileType, setFileType] = useState("Python");
   const [code, setCode] = useState("");
   const [tab, setTab] = useState("paste");
+  const [error, setError] = useState<string | null>(null);
+
+  const SUPPORTED_EXT = ["py","js","ts","tsx","jsx","sol","go","rb","java","php","cs","rs","sql","txt","json","yml","yaml","sh","env"];
+  const LANG_MAP: Record<string, string> = { py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "TypeScript", jsx: "JavaScript", sol: "Solidity", go: "Go", rb: "Ruby", java: "Java", php: "PHP", cs: "C#", rs: "Rust", dockerfile: "Docker", sql: "SQL" };
 
   const handleFile = useCallback(async (file: File) => {
+    setError(null);
+    const nameLower = file.name.toLowerCase();
+    const ext = nameLower.split(".").pop() ?? "";
+    const isDockerfile = nameLower === "dockerfile" || nameLower.endsWith(".dockerfile");
+    if (!isDockerfile && !SUPPORTED_EXT.includes(ext)) {
+      setError(`Unsupported file type ".${ext}". Try a source file such as .py, .js, .ts, .sol, .go, or a Dockerfile.`);
+      return;
+    }
     const text = await file.text();
     setCode(text.slice(0, 60000));
     if (!projectName) setProjectName(file.name);
-    const ext = file.name.split(".").pop()?.toLowerCase();
-    const map: Record<string, string> = { py: "Python", js: "JavaScript", ts: "TypeScript", tsx: "TypeScript", sol: "Solidity", go: "Go", rb: "Ruby", java: "Java", php: "PHP", cs: "C#", rs: "Rust", dockerfile: "Docker", sql: "SQL" };
-    if (ext && map[ext]) setFileType(map[ext]);
-    if (file.name.toLowerCase() === "dockerfile") setFileType("Docker");
+    if (isDockerfile) setFileType("Docker");
+    else if (LANG_MAP[ext]) setFileType(LANG_MAP[ext]);
   }, [projectName]);
 
   const onDrop = (e: DragEvent<HTMLDivElement>) => {
@@ -274,8 +284,19 @@ function ScanForm({
   };
 
   const submit = () => {
-    if (!projectName.trim()) return toast.error("Give the scan a project name");
-    if (!code.trim()) return toast.error("Paste some code or upload a file first");
+    if (!projectName.trim()) {
+      setError("Give the scan a project name before running the audit.");
+      return;
+    }
+    if (!code.trim()) {
+      setError("Please paste valid source code to begin auditing.");
+      return;
+    }
+    if (code.trim().length < 10) {
+      setError("That snippet is too short to audit — paste at least a full function or file.");
+      return;
+    }
+    setError(null);
     onSubmit({ project_name: projectName.trim(), file_type: fileType, source_code: code });
   };
 
