@@ -144,10 +144,7 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
           </div>
 
           {diffOpen && (
-            <div className="grid gap-2 md:grid-cols-2">
-              <DiffPane label="Vulnerable" code={vuln.vulnerable_code_block || "// —"} tone="bad" />
-              <DiffPane label="AI Fixed" code={vuln.fixed_code_block || "// —"} tone="good" />
-            </div>
+            <AlignedDiff rows={diffRows} />
           )}
 
           {vuln.remediation_steps && (
