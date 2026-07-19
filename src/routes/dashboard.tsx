@@ -327,9 +327,12 @@ function ScanForm({
         <TabsContent value="paste" className="mt-3">
           <Textarea
             value={code}
-            onChange={(e) => setCode(e.target.value)}
+            onChange={(e) => { setCode(e.target.value); if (error) setError(null); }}
             placeholder="// Paste your source code here..."
-            className="min-h-[240px] bg-[oklch(0.13_0.02_250)] font-mono text-sm"
+            className={cn(
+              "min-h-[240px] bg-[oklch(0.13_0.02_250)] font-mono text-sm",
+              error && "border-critical/70 focus-visible:ring-critical/40",
+            )}
           />
         </TabsContent>
         <TabsContent value="upload" className="mt-3">
