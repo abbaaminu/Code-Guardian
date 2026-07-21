@@ -124,17 +124,31 @@ function ScanReport() {
         </Button>
       }
     >
-      <div className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_minmax(420px,480px)]">
+      <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(340px,380px)_minmax(380px,440px)] lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">
         {/* LEFT — Code Vault */}
         <section className="min-w-0">
           <CodeVault
-            code={scan.source_code || "// (no source available)"}
+            code={displayedCode || "// (no source available)"}
             highlights={highlights}
             activeVulnId={activeId}
             patchedLines={new Set([...patchedLines, ...flashLines])}
             onLineClick={handleLineClick}
           />
         </section>
+
+        {/* MIDDLE — AI Copilot Chat */}
+        <section className="min-w-0 h-[calc(100vh-3.5rem)]">
+          <CopilotChat
+            sourceCode={displayedCode}
+            fileType={scan.file_type}
+            onApplyCode={(code) => {
+              setLiveCode(code);
+              setPatchedLines(new Set());
+              setFlashLines(new Set());
+            }}
+          />
+        </section>
+
 
         {/* RIGHT — Actionable Audit Panel */}
         <aside className="flex min-h-0 flex-col gap-3">
