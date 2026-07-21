@@ -48,6 +48,7 @@ function ScanReport() {
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [patchedLines, setPatchedLines] = useState<Set<number>>(new Set());
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
+  const [liveCode, setLiveCode] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const fetchReport = useServerFn(getScanReport);
