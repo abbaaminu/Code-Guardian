@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { CodeVault } from "@/components/code-vault";
 import { VulnCard, type VulnCardData } from "@/components/vuln-card";
 import { WorkspaceActionBar } from "@/components/workspace-action-bar";
+import { CopilotChat } from "@/components/copilot-chat";
 import { getScanReport } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
