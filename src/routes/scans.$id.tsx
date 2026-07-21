@@ -85,6 +85,7 @@ function ScanReport() {
   }
 
   const { scan, vulns } = data;
+  const displayedCode = liveCode ?? scan.source_code ?? "";
 
   const handleLineClick = (vulnId: string) => {
     setActiveId(vulnId);
