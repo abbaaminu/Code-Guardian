@@ -218,6 +218,68 @@ export const listPolicies = createServerFn({ method: "GET" }).handler(async () =
   return data ?? [];
 });
 
+const CopilotInput = z.object({
+  instruction: z.string().min(1).max(2000),
+  source_code: z.string().min(1).max(60000),
+  file_type: z.string().min(1).max(40),
+});
+
+export const copilotRemediate = createServerFn({ method: "POST" })
+  .inputValidator((input: unknown) => CopilotInput.parse(input))
+  .handler(async ({ data }) => {
+    const apiKey = process.env.GOOGLE_API_KEY;
+    if (!apiKey) throw new Error("Missing GOOGLE_API_KEY");
+
+    const systemPrompt = `You are SecurePulse Remediation Copilot. Rewrite the user's code per their instruction, prioritizing security best practices.
+
+STRICT OUTPUT CONTRACT:
+- Return ONLY a JSON object: {"updated_code": string, "summary": string, "changes": string[]}
+- "updated_code": the ENTIRE updated source file, compilable/valid ${data.file_type}. NO markdown fences, NO placeholders, NO "TODO" comments.
+- "summary": one-sentence description of what changed.
+- "changes": short bullet list (max 5) of concrete edits.
+- If the instruction is unsafe, unclear, or unrelated, still return the original code unchanged with an explanatory summary.`;
+
+    const userPrompt = `Language: ${data.file_type}
+Instruction: ${data.instruction}
+
+--- CODE START ---
+${data.source_code}
+--- CODE END ---`;
+
+    const model = "gemini-2.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
+        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      if (res.status === 429) throw new Error("Rate limit hit — please retry in a moment.");
+      throw new Error(`Copilot API error [${res.status}]: ${body.slice(0, 300)}`);
+    }
+    const payload = (await res.json()) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+    };
+    const content = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "{}";
+    try {
+      const parsed = JSON.parse(content) as { updated_code?: unknown; summary?: unknown; changes?: unknown };
+      return {
+        updated_code: typeof parsed.updated_code === "string" ? parsed.updated_code : data.source_code,
+        summary: typeof parsed.summary === "string" ? parsed.summary.slice(0, 500) : "Updated code generated.",
+        changes: Array.isArray(parsed.changes)
+          ? parsed.changes.filter((c): c is string => typeof c === "string").slice(0, 8)
+          : [],
+      };
+    } catch {
+      return { updated_code: data.source_code, summary: "Copilot returned no parseable changes.", changes: [] };
+    }
+  });
+
 export const togglePolicy = createServerFn({ method: "POST" })
   .inputValidator((input: unknown) =>
     z.object({ id: z.string().uuid(), enabled: z.boolean() }).parse(input),
