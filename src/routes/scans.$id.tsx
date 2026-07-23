@@ -13,6 +13,7 @@ import { getScanReport } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import type { Severity } from "@/lib/severity";
+import { RequireAuth } from "@/components/require-auth";
 
 
 interface Scan {
