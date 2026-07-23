@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
 import { Separator } from "@/components/ui/separator";
+import { SignOutButton } from "@/components/require-auth";
 
 export function AppShell({ title, subtitle, actions, children }: {
   title: string;
@@ -23,7 +24,11 @@ export function AppShell({ title, subtitle, actions, children }: {
                 <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
               )}
             </div>
-            <div className="flex items-center gap-2">{actions}</div>
+            <div className="flex items-center gap-2">
+              {actions}
+              <Separator orientation="vertical" className="h-5" />
+              <SignOutButton />
+            </div>
           </header>
           <main className="flex-1">{children}</main>
         </div>
