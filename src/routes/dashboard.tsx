@@ -100,23 +100,8 @@ function Dashboard() {
   });
 
   const scanMutation = useMutation({
-    mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) => {
-      try {
-        // Execute primary server function
-        const res = await run({ data: input });
-        return res;
-      } catch (error) {
-        console.warn("Server scan function threw an error. Operating in fail-safe fallback mode.", error);
-        // Fallback execution mock ID to prevent UI breakdown
-        const fallbackId = crypto.randomUUID();
-        return {
-          id: fallbackId,
-          health_score: 82,
-          project_name: input.project_name,
-          file_type: input.file_type,
-        };
-      }
-    },
+    mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) =>
+      run({ data: input }),
     onMutate: () => {
       setPhase("running");
       setCompletedScanId(null);
