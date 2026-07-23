@@ -4,7 +4,11 @@ import tsconfigPaths from 'vite-tsconfig-paths'
 
 export default defineConfig({
   plugins: [
-    tanstackStart(),
+    tanstackStart({
+      deployment: {
+        preset: 'vercel'
+      }
+    }),
     tsconfigPaths()
   ]
 })
