@@ -136,147 +136,145 @@ function Dashboard() {
 
   return (
     <RequireAuth>
-    <AppShell
-      title="Scan Dashboard"
-      subtitle="Paste code, upload a file, or connect a repo to audit for OWASP, CWE, and secret exposure."
-      actions={
-        <Link to="/policies" className="text-xs text-muted-foreground hover:text-foreground">
-          Manage policies →
-        </Link>
-      }
-    >
-      </AppShell>
-    </RequireAuth>
-  );
-      <div className="grid-bg border-b border-border/60">
-        <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
-          <StatCards {...totals} />
-          <ScanAnalytics scans={scans} />
-        </div>
-      </div>
-
-      <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-          {showSimulator ? (
-            <ScanSimulator
-              running={phase === "running"}
-              completed={phase === "done"}
-              failed={phase === "failed"}
-              scanId={completedScanId}
-              onDismiss={() => {
-                setPhase("idle");
-                setCompletedScanId(null);
-              }}
-            />
-          ) : (
-            <ScanForm
-              submitting={scanMutation.isPending}
-              onSubmit={(v) => scanMutation.mutate(v)}
-              onCodeChange={(code, fileType) => {
-                setCopilotCode(code);
-                setCopilotFileType(fileType);
-              }}
-            />
-          )}
-
-          <section className="min-h-[420px] rounded-xl border border-border/60">
-            <CopilotChat
-              sourceCode={copilotCode}
-              fileType={copilotFileType}
-              onApplyCode={(code) => setCopilotCode(code)}
-            />
-          </section>
-        </div>
-
-        <section id="history" className="space-y-3">
-          <div className="flex items-baseline justify-between">
-            <h2 className="text-base font-semibold tracking-tight">Recent audits</h2>
-            <span className="text-xs text-muted-foreground">{scans.length} scans</span>
+      <AppShell
+        title="Scan Dashboard"
+        subtitle="Paste code, upload a file, or connect a repo to audit for OWASP, CWE, and secret exposure."
+        actions={
+          <Link to="/policies" className="text-xs text-muted-foreground hover:text-foreground">
+            Manage policies →
+          </Link>
+        }
+      >
+        <div className="grid-bg border-b border-border/60">
+          <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
+            <StatCards {...totals} />
+            <ScanAnalytics scans={scans} />
           </div>
-          <Card className="overflow-hidden">
-            <Table>
-              <TableHeader>
-                <TableRow className="hover:bg-transparent">
-                  <TableHead>Project</TableHead>
-                  <TableHead>Language</TableHead>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Threat</TableHead>
-                  <TableHead>Health</TableHead>
-                  <TableHead className="text-right">Report</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {isLoading && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      Loading…
-                    </TableCell>
+        </div>
+
+        <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+            {showSimulator ? (
+              <ScanSimulator
+                running={phase === "running"}
+                completed={phase === "done"}
+                failed={phase === "failed"}
+                scanId={completedScanId}
+                onDismiss={() => {
+                  setPhase("idle");
+                  setCompletedScanId(null);
+                }}
+              />
+            ) : (
+              <ScanForm
+                submitting={scanMutation.isPending}
+                onSubmit={(v) => scanMutation.mutate(v)}
+                onCodeChange={(code, fileType) => {
+                  setCopilotCode(code);
+                  setCopilotFileType(fileType);
+                }}
+              />
+            )}
+
+            <section className="min-h-[420px] rounded-xl border border-border/60">
+              <CopilotChat
+                sourceCode={copilotCode}
+                fileType={copilotFileType}
+                onApplyCode={(code) => setCopilotCode(code)}
+              />
+            </section>
+          </div>
+
+          <section id="history" className="space-y-3">
+            <div className="flex items-baseline justify-between">
+              <h2 className="text-base font-semibold tracking-tight">Recent audits</h2>
+              <span className="text-xs text-muted-foreground">{scans.length} scans</span>
+            </div>
+            <Card className="overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow className="hover:bg-transparent">
+                    <TableHead>Project</TableHead>
+                    <TableHead>Language</TableHead>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Threat</TableHead>
+                    <TableHead>Health</TableHead>
+                    <TableHead className="text-right">Report</TableHead>
                   </TableRow>
-                )}
-                {!isLoading && scans.length === 0 && (
-                  <TableRow>
-                    <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                      No scans yet — submit code above to run your first audit.
-                    </TableCell>
-                  </TableRow>
-                )}
-                {scans.map((s) => {
-                  const top = topSeverity(s.vulnerabilities_count);
-                  return (
-                    <TableRow key={s.id}>
-                      <TableCell className="font-medium">{s.project_name}</TableCell>
-                      <TableCell>
-                        <span className="rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs">
-                          {s.file_type}
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-xs text-muted-foreground">
-                        {s.created_at ? new Date(s.created_at).toLocaleString() : "Just now"}
-                      </TableCell>
-                      <TableCell>
-                        {top ? <SeverityBadge severity={top} /> : <span className="text-xs text-muted-foreground">clean</span>}
-                      </TableCell>
-                      <TableCell>
-                        <HealthBar score={s.health_score ?? 100} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="sm">
-                              Report <ChevronDown className="ml-1 h-3.5 w-3.5" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="w-56">
-                            <DropdownMenuItem asChild>
-                              <Link to="/scans/$id" params={{ id: s.id }} className="cursor-pointer">
-                                <ExternalLink className="mr-2 h-3.5 w-3.5" />
-                                View online workspace
-                              </Link>
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem onSelect={() => setExportScan(s)} className="cursor-pointer">
-                              <FileDown className="mr-2 h-3.5 w-3.5" />
-                              Export executive summary
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                </TableHeader>
+                <TableBody>
+                  {isLoading && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        Loading…
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </Card>
-        </section>
-      </div>
-      <ReportExportDialog
-        scan={exportScan}
-        open={exportScan !== null}
-        onOpenChange={(v) => {
-          if (!v) setExportScan(null);
-        }}
-      />
-    </AppShell>
+                  )}
+                  {!isLoading && scans.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                        No scans yet — submit code above to run your first audit.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                  {scans.map((s) => {
+                    const top = topSeverity(s.vulnerabilities_count);
+                    return (
+                      <TableRow key={s.id}>
+                        <TableCell className="font-medium">{s.project_name}</TableCell>
+                        <TableCell>
+                          <span className="rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs">
+                            {s.file_type}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">
+                          {s.created_at ? new Date(s.created_at).toLocaleString() : "Just now"}
+                        </TableCell>
+                        <TableCell>
+                          {top ? <SeverityBadge severity={top} /> : <span className="text-xs text-muted-foreground">clean</span>}
+                        </TableCell>
+                        <TableCell>
+                          <HealthBar score={s.health_score ?? 100} />
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="sm">
+                                Report <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuItem asChild>
+                                <Link to="/scans/$id" params={{ id: s.id }} className="cursor-pointer">
+                                  <ExternalLink className="mr-2 h-3.5 w-3.5" />
+                                  View online workspace
+                                </Link>
+                              </DropdownMenuItem>
+                              <DropdownMenuSeparator />
+                              <DropdownMenuItem onSelect={() => setExportScan(s)} className="cursor-pointer">
+                                <FileDown className="mr-2 h-3.5 w-3.5" />
+                                Export executive summary
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </Card>
+          </section>
+        </div>
+        <ReportExportDialog
+          scan={exportScan}
+          open={exportScan !== null}
+          onOpenChange={(v) => {
+            if (!v) setExportScan(null);
+          }}
+        />
+      </AppShell>
+    </RequireAuth>
   );
 }
 
@@ -339,7 +337,6 @@ function ScanForm({
     onCodeChange?.(code, fileType);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code, fileType]);
-
 
   const SUPPORTED_EXT = [
     "py",
