@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useCallback, type ChangeEvent, type DragEvent } from "react";
+import { useState, useCallback, useEffect, type ChangeEvent, type DragEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -16,6 +16,7 @@ import { ScanSimulator } from "@/components/scan-simulator";
 import { ScanAnalytics } from "@/components/scan-analytics";
 import { ReportExportDialog } from "@/components/report-export-dialog";
 import { ConnectRepositoryPanel } from "@/components/connect-repository";
+import { CopilotChat } from "@/components/copilot-chat";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -85,6 +86,8 @@ function Dashboard() {
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
   const [exportScan, setExportScan] = useState<ScanRow | null>(null);
+  const [copilotCode, setCopilotCode] = useState("");
+  const [copilotFileType, setCopilotFileType] = useState("Python");
 
   const { data: scans = [], isLoading } = useQuery({
     queryKey: ["scans"],
@@ -148,20 +151,37 @@ function Dashboard() {
       </div>
 
       <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
-        {showSimulator ? (
-          <ScanSimulator
-            running={phase === "running"}
-            completed={phase === "done"}
-            failed={phase === "failed"}
-            scanId={completedScanId}
-            onDismiss={() => {
-              setPhase("idle");
-              setCompletedScanId(null);
-            }}
-          />
-        ) : (
-          <ScanForm submitting={scanMutation.isPending} onSubmit={(v) => scanMutation.mutate(v)} />
-        )}
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
+          {showSimulator ? (
+            <ScanSimulator
+              running={phase === "running"}
+              completed={phase === "done"}
+              failed={phase === "failed"}
+              scanId={completedScanId}
+              onDismiss={() => {
+                setPhase("idle");
+                setCompletedScanId(null);
+              }}
+            />
+          ) : (
+            <ScanForm
+              submitting={scanMutation.isPending}
+              onSubmit={(v) => scanMutation.mutate(v)}
+              onCodeChange={(code, fileType) => {
+                setCopilotCode(code);
+                setCopilotFileType(fileType);
+              }}
+            />
+          )}
+
+          <section className="min-h-[420px] rounded-xl border border-border/60">
+            <CopilotChat
+              sourceCode={copilotCode}
+              fileType={copilotFileType}
+              onApplyCode={(code) => setCopilotCode(code)}
+            />
+          </section>
+        </div>
 
         <section id="history" className="space-y-3">
           <div className="flex items-baseline justify-between">
@@ -298,15 +318,23 @@ function topSeverity(counts: Record<Severity, number> | undefined): Severity | n
 function ScanForm({
   submitting,
   onSubmit,
+  onCodeChange,
 }: {
   submitting: boolean;
   onSubmit: (v: { project_name: string; file_type: string; source_code: string }) => void;
+  onCodeChange?: (code: string, fileType: string) => void;
 }) {
   const [projectName, setProjectName] = useState("");
   const [fileType, setFileType] = useState("Python");
   const [code, setCode] = useState("");
   const [tab, setTab] = useState("paste");
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    onCodeChange?.(code, fileType);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [code, fileType]);
+
 
   const SUPPORTED_EXT = [
     "py",
