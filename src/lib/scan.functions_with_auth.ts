@@ -1,5 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
+import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
 
 type Severity = "critical" | "high" | "medium" | "low";
@@ -97,7 +98,7 @@ Language / File type: ${fileType}
 ${code}
 --- CODE END ---`;
 
-  const model = "gemini-3.6-flash";
+  const model = "gemini-2.5-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
 
   const res = await fetch(url, {
@@ -133,15 +134,16 @@ ${code}
 
 
 export const runScan = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => ScanInput.parse(input))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
 
     // Load enabled policies to steer the scan.
     const { data: policyRows } = await supabase.from("policies").select("name").eq("enabled", true);
     const policies = (policyRows ?? []).map((p) => p.name);
 
-    // Create scan in scanning state.
+    // Create scan in scanning state, tagged to the signed-in user.
     const { data: created, error: createErr } = await supabase
       .from("scans")
       .insert({
@@ -149,6 +151,7 @@ export const runScan = createServerFn({ method: "POST" })
         file_type: data.file_type,
         status: "scanning",
         source_code: data.source_code,
+        user_id: context.userId,
       })
       .select("id")
       .single();
@@ -182,23 +185,27 @@ export const runScan = createServerFn({ method: "POST" })
     }
   });
 
-export const listScans = createServerFn({ method: "GET" }).handler(async () => {
-  const supabase = await serverSupabase();
-  const { data, error } = await supabase
-    .from("scans")
-    .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
-    .order("created_at", { ascending: false })
-    .limit(50);
-  if (error) throw new Error(error.message);
-  return data ?? [];
-});
+export const listScans = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    const supabase = await serverSupabase();
+    const { data, error } = await supabase
+      .from("scans")
+      .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
+      .eq("user_id", context.userId)
+      .order("created_at", { ascending: false })
+      .limit(50);
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
 
 export const getScanReport = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
   .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
     const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
-      supabase.from("scans").select("*").eq("id", data.id).maybeSingle(),
+      supabase.from("scans").select("*").eq("id", data.id).eq("user_id", context.userId).maybeSingle(),
       supabase.from("vulnerabilities").select("*").eq("scan_id", data.id).order("severity"),
     ]);
     if (e1) throw new Error(e1.message);
@@ -246,7 +253,7 @@ Instruction: ${data.instruction}
 ${data.source_code}
 --- CODE END ---`;
 
-    const model = "gemini-3.6-flash";
+    const model = "gemini-2.5-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: "POST",
@@ -293,4 +300,3 @@ export const togglePolicy = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
-
