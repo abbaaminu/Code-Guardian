@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Search, GitBranch, Shield, ArrowRight, Loader2 } from 'lucide-react';
+import { Search, GitBranch, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 
-interface ConnectRepositoryProps {
-  onSelectRepo: (repoUrl: string, repoName: string) => void;
+interface ConnectRepositoryPanelProps {
+  submitting?: boolean;
+  onSubmit?: (v: { project_name: string; file_type: string; source_code: string }) => void;
+  onSelectRepo?: (repoUrl: string, repoName: string) => void;
 }
 
-export function ConnectRepository({ onSelectRepo }: ConnectRepositoryProps) {
+export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: ConnectRepositoryPanelProps) {
   const [username, setUsername] = useState('abbaaminu');
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -29,6 +31,19 @@ export function ConnectRepository({ onSelectRepo }: ConnectRepositoryProps) {
     }
   };
 
+  const handleScanRepo = (repoUrl: string, repoName: string) => {
+    if (onSelectRepo) {
+      onSelectRepo(repoUrl, repoName);
+    }
+    if (onSubmit) {
+      onSubmit({
+        project_name: repoName,
+        file_type: 'Repository',
+        source_code: `// Repository audit target: ${repoUrl}\n// Initialized from GitHub API integration`,
+      });
+    }
+  };
+
   return (
     <div className="space-y-4 p-4 bg-slate-900/60 rounded-xl border border-slate-800">
       <div className="flex gap-2">
@@ -38,7 +53,11 @@ export function ConnectRepository({ onSelectRepo }: ConnectRepositoryProps) {
           onChange={(e) => setUsername(e.target.value)}
           className="bg-slate-950 border-slate-800 text-white"
         />
-        <Button onClick={fetchGitHubRepos} disabled={loading} className="bg-emerald-600 hover:bg-emerald-500 text-white">
+        <Button
+          onClick={fetchGitHubRepos}
+          disabled={loading || submitting}
+          className="bg-emerald-600 hover:bg-emerald-500 text-white shrink-0"
+        >
           {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Search className="w-4 h-4 mr-2" />}
           Fetch Repos
         </Button>
@@ -48,24 +67,40 @@ export function ConnectRepository({ onSelectRepo }: ConnectRepositoryProps) {
 
       <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
         {repos.map((repo) => (
-          <div key={repo.id} className="flex items-center justify-between p-3 bg-slate-950/80 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors">
-            <div className="flex items-center gap-3">
-              <GitBranch className="w-4 h-4 text-emerald-400" />
-              <div>
-                <p className="font-mono text-sm font-medium text-slate-200">{repo.full_name}</p>
-                <p className="text-xs text-slate-400">{repo.description || 'Public Repository'}</p>
+          <div
+            key={repo.id}
+            className="flex items-center justify-between p-3 bg-slate-950/80 rounded-lg border border-slate-800 hover:border-slate-700 transition-colors"
+          >
+            <div className="flex items-center gap-3 overflow-hidden mr-2">
+              <GitBranch className="w-4 h-4 text-emerald-400 shrink-0" />
+              <div className="truncate">
+                <p className="font-mono text-sm font-medium text-slate-200 truncate">{repo.full_name}</p>
+                <p className="text-xs text-slate-400 truncate">{repo.description || 'Public Repository'}</p>
               </div>
             </div>
             <Button
               size="sm"
-              onClick={() => onSelectRepo(repo.html_url, repo.name)}
-              className="bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30"
+              disabled={submitting}
+              onClick={() => handleScanRepo(repo.html_url, repo.name)}
+              className="bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 shrink-0"
             >
-              Scan Repo <ArrowRight className="w-3 h-3 ml-1" />
+              {submitting ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <>
+                  Scan Repo <ArrowRight className="w-3 h-3 ml-1" />
+                </>
+              )}
             </Button>
           </div>
         ))}
+        {repos.length === 0 && !loading && !error && (
+          <p className="text-xs text-slate-400 text-center py-4">Enter a username and click "Fetch Repos" to load GitHub projects.</p>
+        )}
       </div>
     </div>
   );
 }
+
+// Named export alias for backward compatibility
+export { ConnectRepositoryPanel as ConnectRepository };
