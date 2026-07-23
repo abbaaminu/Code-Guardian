@@ -17,6 +17,7 @@ import { ScanAnalytics } from "@/components/scan-analytics";
 import { ReportExportDialog } from "@/components/report-export-dialog";
 import { ConnectRepositoryPanel } from "@/components/connect-repository";
 import { CopilotChat } from "@/components/copilot-chat";
+import { RequireAuth } from "@/components/require-auth";
 import {
   DropdownMenu,
   DropdownMenuContent,
