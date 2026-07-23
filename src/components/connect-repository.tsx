@@ -9,11 +9,69 @@ interface ConnectRepositoryPanelProps {
   onSelectRepo?: (repoUrl: string, repoName: string) => void;
 }
 
+// Extensions worth pulling into a scan. Keep this focused — binary/asset
+// files and lockfiles just burn the character budget for no signal.
+const SCANNABLE_EXTENSIONS = new Set([
+  'js', 'jsx', 'ts', 'tsx', 'py', 'rb', 'go', 'php', 'java', 'kt', 'cs',
+  'sol', 'rs', 'c', 'cpp', 'h', 'sql', 'yml', 'yaml', 'json', 'env',
+  'dockerfile', 'sh',
+]);
+
+const MAX_FILES = 25;
+const MAX_TOTAL_CHARS = 60000; // keep the Gemini payload reasonable
+
+async function fetchRepoSourceCode(owner: string, repoName: string, branch: string): Promise<string> {
+  const treeRes = await fetch(
+    `https://api.github.com/repos/${owner}/${repoName}/git/trees/${branch}?recursive=1`,
+  );
+  if (!treeRes.ok) {
+    throw new Error('Could not read repository file tree (branch may be wrong or repo is empty).');
+  }
+  const treeData = await treeRes.json();
+  const blobs: { path: string; size: number }[] = (treeData.tree || []).filter(
+    (item: any) =>
+      item.type === 'blob' &&
+      typeof item.size === 'number' &&
+      item.size < 50000 && // skip huge generated/minified files
+      SCANNABLE_EXTENSIONS.has(item.path.split('.').pop()?.toLowerCase() ?? '') &&
+      !item.path.includes('node_modules/') &&
+      !item.path.includes('dist/') &&
+      !item.path.includes('.lock'),
+  );
+
+  if (blobs.length === 0) {
+    throw new Error('No scannable source files found in this repository.');
+  }
+
+  const selected = blobs.slice(0, MAX_FILES);
+  let combined = '';
+  for (const blob of selected) {
+    if (combined.length >= MAX_TOTAL_CHARS) break;
+    try {
+      const raw = await fetch(
+        `https://raw.githubusercontent.com/${owner}/${repoName}/${branch}/${blob.path}`,
+      );
+      if (!raw.ok) continue;
+      const text = await raw.text();
+      combined += `\n// ==== File: ${blob.path} ====\n${text}\n`;
+    } catch {
+      // Skip files that fail to fetch rather than aborting the whole scan.
+    }
+  }
+
+  if (combined.trim().length === 0) {
+    throw new Error('Fetched file list but could not read any file contents.');
+  }
+
+  return combined.slice(0, MAX_TOTAL_CHARS);
+}
+
 export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: ConnectRepositoryPanelProps) {
   const [username, setUsername] = useState('abbaaminu');
   const [repos, setRepos] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [scanningRepo, setScanningRepo] = useState<string | null>(null);
 
   const fetchGitHubRepos = async () => {
     if (!username.trim()) return;
@@ -71,16 +129,26 @@ export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: C
     }
   };
 
-  const handleScanRepo = (repoUrl: string, repoName: string) => {
+  const handleScanRepo = async (repo: any) => {
     if (onSelectRepo) {
-      onSelectRepo(repoUrl, repoName);
+      onSelectRepo(repo.html_url, repo.name);
     }
-    if (onSubmit) {
+    if (!onSubmit) return;
+
+    setScanningRepo(repo.full_name);
+    setError('');
+    try {
+      const branch = repo.default_branch || 'main';
+      const sourceCode = await fetchRepoSourceCode(repo.owner?.login ?? username, repo.name, branch);
       onSubmit({
-        project_name: repoName,
-        file_type: 'Repository',
-        source_code: `// Repository audit target: ${repoUrl}\n// Initialized from GitHub API integration`,
+        project_name: repo.name,
+        file_type: repo.language || 'Repository',
+        source_code: sourceCode,
       });
+    } catch (err: any) {
+      setError(err.message || `Failed to read files from ${repo.full_name}`);
+    } finally {
+      setScanningRepo(null);
     }
   };
 
@@ -120,11 +188,11 @@ export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: C
             </div>
             <Button
               size="sm"
-              disabled={submitting}
-              onClick={() => handleScanRepo(repo.html_url, repo.name)}
+              disabled={submitting || scanningRepo !== null}
+              onClick={() => handleScanRepo(repo)}
               className="bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 border border-emerald-500/30 shrink-0"
             >
-              {submitting ? (
+              {scanningRepo === repo.full_name || submitting ? (
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
               ) : (
                 <>
