@@ -361,6 +361,6 @@ function Policies() {
         </div>
       </div>
     </AppShell>
-   <RequireAuth>
+   </RequireAuth>
   );
 }
