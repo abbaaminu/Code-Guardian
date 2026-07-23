@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { listPolicies, togglePolicy } from "@/lib/scan.functions";
+import { RequireAuth } from "@/components/require-auth";
 import { toast } from "sonner";
 import {
   ShieldCheck,
@@ -176,6 +177,7 @@ function Policies() {
   const enabledCount = policies.filter((p) => p.enabled).length;
 
   return (
+    <RequireAuth>
     <AppShell
       title="Security Policies"
       subtitle={`${enabledCount} / ${policies.length} active · applied on every scan`}
@@ -359,5 +361,6 @@ function Policies() {
         </div>
       </div>
     </AppShell>
+   <RequireAuth>
   );
 }
