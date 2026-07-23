@@ -1,0 +1,29 @@
+<svg width="32" height="32" viewBox="0 0 900 1100" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="emerald" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#059669"/>
+    </linearGradient>
+    <filter id="softGlow" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <rect width="900" height="1100" fill="#1c1f24"/>
+
+  <g transform="translate(450,340)">
+    <path d="M0,-230 L165,-170 L165,20 C165,150 90,235 0,270 C-90,235 -165,150 -165,20 L-165,-170 Z"
+          fill="none" stroke="url(#emerald)" stroke-width="14"
+          stroke-linejoin="round" stroke-linecap="round"/>
+    <g filter="url(#softGlow)">
+      <path d="M-165,-40 L-120,-40 L-95,-110 L-55,40 L-15,-90 L15,-20 L45,-20 L70,-70 L100,10 C120,60 130,110 90,160 C60,195 25,220 0,232"
+            fill="none" stroke="url(#emerald)" stroke-width="15"
+            stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <circle cx="-165" cy="-40" r="9" fill="#34d399"/>
+  </g>
+</svg>
