@@ -79,9 +79,11 @@ function ScanReport() {
 
   if (isLoading || !data) {
     return (
+      <RequireAuth>
       <AppShell title="Audit workspace">
         <div className="p-10 text-sm text-muted-foreground">Loading report…</div>
       </AppShell>
+   </RequireAuth>
     );
   }
 
@@ -116,6 +118,7 @@ function ScanReport() {
   const appliedCount = Object.values(applied).filter(Boolean).length;
 
   return (
+   <RequireAuth>
     <AppShell
       title={scan.project_name}
       subtitle={`${scan.file_type} · ${new Date(scan.created_at).toLocaleString()} · ${vulns.length} findings`}
@@ -217,5 +220,6 @@ function ScanReport() {
         totalFindings={vulns.length}
       />
     </AppShell>
+  </RequireAuth>
   );
 }
