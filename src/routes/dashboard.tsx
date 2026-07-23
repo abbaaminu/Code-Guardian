@@ -135,6 +135,7 @@ function Dashboard() {
   const showSimulator = phase !== "idle";
 
   return (
+    <RequireAuth>
     <AppShell
       title="Scan Dashboard"
       subtitle="Paste code, upload a file, or connect a repo to audit for OWASP, CWE, and secret exposure."
@@ -144,6 +145,9 @@ function Dashboard() {
         </Link>
       }
     >
+      </AppShell>
+    </RequireAuth>
+  );
       <div className="grid-bg border-b border-border/60">
         <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
           <StatCards {...totals} />
