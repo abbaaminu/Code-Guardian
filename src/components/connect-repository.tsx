@@ -19,13 +19,53 @@ export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: C
     if (!username.trim()) return;
     setLoading(true);
     setError('');
+
     try {
-      const response = await fetch(`https://api.github.com/users/${username}/repos?sort=updated&per_page=15`);
-      if (!response.ok) throw new Error('GitHub account or organization not found');
-      const data = await response.json();
-      setRepos(data);
+      // Clean input: strip domain, protocol, trailing slashes, and '.git' extensions
+      const cleanPath = username
+        .trim()
+        .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+        .replace(/^github\.com\//i, '')
+        .replace(/\.git$/i, '')
+        .replace(/^\/+|\/+$/g, '');
+
+      const parts = cleanPath.split('/').filter(Boolean);
+
+      if (parts.length === 0) {
+        throw new Error('Please enter a valid GitHub username or repository URL');
+      }
+
+      // Automatically update the input box to show the clean format
+      setUsername(cleanPath);
+
+      if (parts.length >= 2) {
+        // Case 1: Specific repository URL or path entered (e.g., abbaaminu/Code-Guardian)
+        const owner = parts[0];
+        const repoName = parts[1];
+        const response = await fetch(`https://api.github.com/repos/${owner}/${repoName}`);
+        
+        if (!response.ok) {
+          throw new Error('Repository not found, or it may be private');
+        }
+        
+        const data = await response.json();
+        // Wrap the single repo object in an array so it renders cleanly in the list
+        setRepos([data]);
+      } else {
+        // Case 2: Only username or organization provided (e.g., abbaaminu)
+        const owner = parts[0];
+        const response = await fetch(`https://api.github.com/users/${owner}/repos?sort=updated&per_page=15`);
+        
+        if (!response.ok) {
+          throw new Error('GitHub account or organization not found');
+        }
+        
+        const data = await response.json();
+        setRepos(data);
+      }
     } catch (err: any) {
-      setError(err.message || 'Failed to fetch repositories');
+      setError(err.message || 'Failed to fetch repository data');
+      setRepos([]);
     } finally {
       setLoading(false);
     }
@@ -48,7 +88,7 @@ export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: C
     <div className="space-y-4 p-4 bg-slate-900/60 rounded-xl border border-slate-800">
       <div className="flex gap-2">
         <Input
-          placeholder="Enter GitHub username/org (e.g., abbaaminu)..."
+          placeholder="Enter username or repo URL (e.g., abbaaminu/Code-Guardian)..."
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           className="bg-slate-950 border-slate-800 text-white"
@@ -95,7 +135,7 @@ export function ConnectRepositoryPanel({ submitting, onSubmit, onSelectRepo }: C
           </div>
         ))}
         {repos.length === 0 && !loading && !error && (
-          <p className="text-xs text-slate-400 text-center py-4">Enter a username and click "Fetch Repos" to load GitHub projects.</p>
+          <p className="text-xs text-slate-400 text-center py-4">Enter a username or repository URL and click "Fetch Repos".</p>
         )}
       </div>
     </div>
