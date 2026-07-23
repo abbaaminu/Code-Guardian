@@ -246,7 +246,7 @@ Instruction: ${data.instruction}
 ${data.source_code}
 --- CODE END ---`;
 
-    const model = "gemini-2.5-flash";
+    const model = "gemini-3.6-flash";
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
     const res = await fetch(url, {
       method: "POST",
