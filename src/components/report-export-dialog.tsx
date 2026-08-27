@@ -20,16 +20,13 @@ import {
 import type { Severity } from "@/lib/severity";
 import { getScanReport, getScanSarif } from "@/lib/scan.functions";
 import { summarizeCompliance } from "@/lib/compliance-mapping";
+import type { ScanSummary } from "@/lib/scan-types";
 
-export interface ExportScan {
-  id: string;
-  project_name: string;
-  file_type: string;
-  status: string;
-  health_score: number;
-  vulnerabilities_count: Record<Severity, number>;
-  created_at: string;
-}
+/**
+ * The scan shape the export dialog needs. Alias of the canonical `ScanSummary`
+ * domain type, kept under its historical name for stable call sites.
+ */
+export type ExportScan = ScanSummary;
 
 const SEV_TINT: Record<Severity, string> = {
   critical: "bg-critical/15 text-critical border-critical/40",

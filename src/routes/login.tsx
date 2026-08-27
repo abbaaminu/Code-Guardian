@@ -6,10 +6,17 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { toast } from "sonner";
 import { ArrowLeft, Loader2, ShieldCheck } from "lucide-react";
+import {
+  RouteErrorFallback,
+  RoutePendingFallback,
+} from "@/components/route-boundaries";
 
 export const Route = createFileRoute("/login")({
   head: () => ({ meta: [{ title: "Sign in · SecurePulse" }] }),
   component: LoginPage,
+  errorComponent: RouteErrorFallback,
+  pendingComponent: RoutePendingFallback,
+  pendingMs: 300,
 });
 
 function LoginPage() {

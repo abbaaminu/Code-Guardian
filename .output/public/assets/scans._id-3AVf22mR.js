@@ -1,1 +1,0 @@
-import{t as e}from"./jsx-runtime-Cx0BB4qO.js";var t=e(),n=({error:e})=>(0,t.jsx)(`div`,{className:`p-10 text-center text-sm text-muted-foreground`,children:e.message});export{n as errorComponent};

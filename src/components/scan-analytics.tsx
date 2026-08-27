@@ -14,16 +14,7 @@ import {
 } from "recharts";
 import { TrendingUp, Layers } from "lucide-react";
 import { SEVERITIES, type Severity } from "@/lib/severity";
-
-interface ScanRow {
-  id: string;
-  project_name: string;
-  file_type: string;
-  status: string;
-  health_score: number;
-  vulnerabilities_count: Record<Severity, number>;
-  created_at: string;
-}
+import type { ScanSummary } from "@/lib/scan-types";
 
 const SEV_COLORS: Record<Severity, string> = {
   critical: "var(--critical)",
@@ -41,7 +32,7 @@ function totalVulns(c: Record<Severity, number> | undefined) {
   return (c.critical ?? 0) + (c.high ?? 0) + (c.medium ?? 0) + (c.low ?? 0);
 }
 
-export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
+export function ScanAnalytics({ scans }: { scans: ScanSummary[] }) {
   const trend = useMemo(() => {
     // Group by day (last 14 days). If no scans, seed with zeros so the chart still renders.
     const days: { key: string; label: string; date: Date }[] = [];

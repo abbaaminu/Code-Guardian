@@ -1,0 +1,1 @@
+import{d as e}from"./index-_OeuixYm.js";var t=e;export{t as errorComponent};

@@ -2,7 +2,7 @@ import { forwardRef, useMemo, useState } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/severity-badge";
-import { severityRing, type Severity } from "@/lib/severity";
+import { severityRing } from "@/lib/severity";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import { diffLines, type DiffRow } from "@/lib/diff";
@@ -13,19 +13,14 @@ import {
   GitCompareArrows,
   Check,
 } from "lucide-react";
+import type { ScanVulnerability } from "@/lib/scan-types";
 
-export interface VulnCardData {
-  id: string;
-  title: string;
-  severity: Severity;
-  cwe_id: string | null;
-  vulnerable_code_block: string;
-  fixed_code_block: string;
-  remediation_steps: string;
-  file_path: string | null;
-  line_start: number | null;
-  line_end: number | null;
-}
+/**
+ * A single vulnerability finding. Alias of the canonical `ScanVulnerability`
+ * domain type, kept under its historical name so existing call sites stay
+ * stable.
+ */
+export type VulnCardData = ScanVulnerability;
 
 interface Props {
   vuln: VulnCardData;

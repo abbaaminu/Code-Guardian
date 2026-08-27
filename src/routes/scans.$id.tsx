@@ -1,6 +1,4 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
-import { useServerFn } from "@tanstack/react-start";
 import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -9,25 +7,23 @@ import { CodeVault } from "@/components/code-vault";
 import { VulnCard, type VulnCardData } from "@/components/vuln-card";
 import { WorkspaceActionBar } from "@/components/workspace-action-bar";
 import { CopilotChat } from "@/components/copilot-chat";
-import { getScanReport } from "@/lib/scan.functions";
+import {
+  RouteErrorFallback,
+  RoutePendingFallback,
+} from "@/components/route-boundaries";
+import { RequireAuth } from "@/components/require-auth";
+import { useScanReportQuery } from "@/hooks/use-scan-queries";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
-import { SEVERITIES, type Severity } from "@/lib/severity";
-import { RequireAuth } from "@/components/require-auth";
+import { SEVERITIES } from "@/lib/severity";
+import { z } from "zod";
 
-interface Scan {
-  id: string;
-  project_name: string;
-  file_type: string;
-  status: string;
-  health_score: number;
-  vulnerabilities_count: Record<Severity, number>;
-  source_code: string;
-  created_at: string;
+export interface ScanReportLoaderData {
+  scanId: string;
 }
 
 export const Route = createFileRoute("/scans/$id")({
-  head: ({ params }) => ({
+  head: ({ params }: { params: { id: string } }) => ({
     meta: [
       { title: `Audit ${params.id.slice(0, 8)} · SecurePulse` },
       {
@@ -37,21 +33,41 @@ export const Route = createFileRoute("/scans/$id")({
       },
     ],
   }),
+  // Reject malformed scan ids before any fetch: return `false` so the router
+  // renders this route's notFoundComponent instead of a blank page. Mirrors the
+  // server-side `z.uuid()` validator in getScanReport.
+  parseParams: ({ id }) => {
+    if (!z.string().uuid().safeParse(id).success) return false;
+    return { id };
+  },
+  loader: async (ctx) => ({ scanId: ctx.params.id }),
   component: ScanReport,
-  errorComponent: ({ error }) => (
-    <div className="p-10 text-center text-sm text-muted-foreground">
-      {error.message}
-    </div>
-  ),
+  errorComponent: RouteErrorFallback,
   notFoundComponent: () => (
-    <div className="p-10 text-center text-sm text-muted-foreground">
-      Scan not found.
+    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+      <div className="max-w-md text-center">
+        <h1 className="text-3xl font-bold text-primary">Scan not found</h1>
+        <p className="mt-2 text-sm text-muted-foreground">
+          This audit doesn't exist or may have been deleted.
+        </p>
+        <div className="mt-6">
+          <Link
+            to="/dashboard"
+            className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+          >
+            <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
+            Back to dashboard
+          </Link>
+        </div>
+      </div>
     </div>
   ),
+  pendingComponent: RoutePendingFallback,
+  pendingMs: 300,
 });
 
 function ScanReport() {
-  const { id } = Route.useParams();
+  const { scanId } = Route.useLoaderData();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [patchedLines, setPatchedLines] = useState<Set<number>>(new Set());
@@ -59,17 +75,7 @@ function ScanReport() {
   const [liveCode, setLiveCode] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
-  const fetchReport = useServerFn(getScanReport);
-  const { data, isLoading } = useQuery({
-    queryKey: ["scan", id],
-    queryFn: async () => {
-      const res = await fetchReport({ data: { id } });
-      return {
-        scan: res.scan as unknown as Scan,
-        vulns: res.vulns as unknown as VulnCardData[],
-      };
-    },
-  });
+  const { data, isLoading, isError, refetch } = useScanReportQuery(scanId);
 
   const highlights = useMemo(() => {
     if (!data) return [];
@@ -84,6 +90,27 @@ function ScanReport() {
   }, [data]);
 
   if (isLoading || !data) {
+    // Keep the shell frame consistent while the report loads; hard failures get
+    // a retry action instead of a perpetual spinner.
+    if (isError && !data) {
+      return (
+        <RequireAuth>
+          <AppShell title="Audit workspace">
+            <div className="flex min-h-[60vh] flex-col items-center justify-center gap-3 p-10 text-center">
+              <p className="text-sm font-medium">
+                Couldn't load this scan report.
+              </p>
+              <p className="text-xs text-muted-foreground">
+                The scan may have been removed, or your session expired.
+              </p>
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Try again
+              </Button>
+            </div>
+          </AppShell>
+        </RequireAuth>
+      );
+    }
     return (
       <RequireAuth>
         <AppShell title="Audit workspace">
