@@ -28,7 +28,11 @@
 import { createSign } from "node:crypto";
 
 function base64url(input: Buffer | string): string {
-  return Buffer.from(input).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  return Buffer.from(input)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
 }
 
 // Signs a GitHub App JWT (RS256), valid for 10 minutes, used only to request
@@ -37,7 +41,9 @@ export function signAppJwt(): string {
   const appId = process.env.GITHUB_APP_ID;
   const privateKey = process.env.GITHUB_APP_PRIVATE_KEY;
   if (!appId || !privateKey) {
-    throw new Error("Missing GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY. See setup instructions in app-auth.ts.");
+    throw new Error(
+      "Missing GITHUB_APP_ID / GITHUB_APP_PRIVATE_KEY. See setup instructions in app-auth.ts.",
+    );
   }
 
   const now = Math.floor(Date.now() / 1000);
@@ -54,7 +60,9 @@ export function signAppJwt(): string {
   signer.end();
   // Secret managers frequently mangle PEM newlines; normalize the common
   // "\\n"-escaped form back into real newlines before handing it to node:crypto.
-  const normalizedKey = privateKey.includes("\\n") ? privateKey.replace(/\\n/g, "\n") : privateKey;
+  const normalizedKey = privateKey.includes("\\n")
+    ? privateKey.replace(/\\n/g, "\n")
+    : privateKey;
   const signature = base64url(signer.sign(normalizedKey));
 
   return `${unsigned}.${signature}`;
@@ -69,19 +77,26 @@ export interface InstallationToken {
 // exactly the repos/permissions the installation grants. Cache the result
 // server-side (e.g. in-memory per request, or Redis with a TTL a few minutes
 // under `expiresAt`) rather than calling this per-API-request.
-export async function getInstallationToken(installationId: number | string): Promise<InstallationToken> {
+export async function getInstallationToken(
+  installationId: number | string,
+): Promise<InstallationToken> {
   const jwt = signAppJwt();
-  const res = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
+  const res = await fetch(
+    `https://api.github.com/app/installations/${installationId}/access_tokens`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
     },
-  });
+  );
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Failed to mint installation token [${res.status}]: ${body.slice(0, 300)}`);
+    throw new Error(
+      `Failed to mint installation token [${res.status}]: ${body.slice(0, 300)}`,
+    );
   }
   const data = (await res.json()) as { token: string; expires_at: string };
   return { token: data.token, expiresAt: data.expires_at };

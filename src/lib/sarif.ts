@@ -20,12 +20,13 @@ export interface SarifFinding {
   line_end: number | null;
 }
 
-const SEVERITY_TO_SARIF_LEVEL: Record<Severity, "error" | "warning" | "note"> = {
-  critical: "error",
-  high: "error",
-  medium: "warning",
-  low: "note",
-};
+const SEVERITY_TO_SARIF_LEVEL: Record<Severity, "error" | "warning" | "note"> =
+  {
+    critical: "error",
+    high: "error",
+    medium: "warning",
+    low: "note",
+  };
 
 // SARIF security-severity follows the OWASP/CVSS-like 0-10 convention used by
 // GitHub's code scanning UI to color and sort alerts.
@@ -37,8 +38,28 @@ const SEVERITY_TO_SCORE: Record<Severity, string> = {
 };
 
 function ruleIdFor(title: string, cweId: string | null): string {
-  const base = (cweId ?? title).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+  const base = (cweId ?? title)
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "");
   return `securepulse/${base || "finding"}`;
+}
+
+// Concrete, JSON-serializable rule shape. Previously `rules` was typed as
+// `Record<string, unknown>[]`, which TanStack Start's serverFn serializer
+// rejects (its `ValidateSerializableMapped` check can't prove `unknown` values
+// are wire-safe) and which surfaced as a type error in getScanSarif.
+interface SarifRule {
+  id: string;
+  name: string;
+  shortDescription: { text: string };
+  fullDescription: { text: string };
+  helpUri?: string;
+  properties: {
+    tags: string[];
+    "security-severity": string;
+    precision: string;
+  };
 }
 
 export function buildSarifLog(params: {
@@ -50,7 +71,7 @@ export function buildSarifLog(params: {
   const { toolVersion, scanId, projectName, findings } = params;
 
   const ruleIndex = new Map<string, number>();
-  const rules: Record<string, unknown>[] = [];
+  const rules: SarifRule[] = [];
 
   const results = findings.map((f) => {
     const cwe = f.cwe_id ?? null;
@@ -64,7 +85,9 @@ export function buildSarifLog(params: {
         name: f.title.replace(/\s+/g, ""),
         shortDescription: { text: f.title },
         fullDescription: { text: f.remediation_steps },
-        helpUri: cwe ? `https://cwe.mitre.org/data/definitions/${cwe.replace(/^CWE-/i, "")}.html` : undefined,
+        helpUri: cwe
+          ? `https://cwe.mitre.org/data/definitions/${cwe.replace(/^CWE-/i, "")}.html`
+          : undefined,
         properties: {
           tags: [
             "security",
@@ -86,11 +109,16 @@ export function buildSarifLog(params: {
       ruleId,
       ruleIndex: ruleIndex.get(ruleId),
       level: SEVERITY_TO_SARIF_LEVEL[f.severity],
-      message: { text: `${f.title}${cwe ? ` (${cwe})` : ""} — ${f.remediation_steps}` },
+      message: {
+        text: `${f.title}${cwe ? ` (${cwe})` : ""} — ${f.remediation_steps}`,
+      },
       locations: [
         {
           physicalLocation: {
-            artifactLocation: { uri: f.file_path ?? projectName, uriBaseId: "%SRCROOT%" },
+            artifactLocation: {
+              uri: f.file_path ?? projectName,
+              uriBaseId: "%SRCROOT%",
+            },
             region: {
               startLine: line,
               endLine,
@@ -106,7 +134,8 @@ export function buildSarifLog(params: {
   });
 
   return {
-    $schema: "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json",
+    $schema:
+      "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/main/Schemata/sarif-schema-2.1.0.json",
     version: "2.1.0",
     runs: [
       {

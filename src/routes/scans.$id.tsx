@@ -12,9 +12,8 @@ import { CopilotChat } from "@/components/copilot-chat";
 import { getScanReport } from "@/lib/scan.functions";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
-import type { Severity } from "@/lib/severity";
+import { SEVERITIES, type Severity } from "@/lib/severity";
 import { RequireAuth } from "@/components/require-auth";
-
 
 interface Scan {
   id: string;
@@ -31,15 +30,23 @@ export const Route = createFileRoute("/scans/$id")({
   head: ({ params }) => ({
     meta: [
       { title: `Audit ${params.id.slice(0, 8)} · SecurePulse` },
-      { name: "description", content: "Interactive code audit workspace with AI-suggested patches and side-by-side diffs." },
+      {
+        name: "description",
+        content:
+          "Interactive code audit workspace with AI-suggested patches and side-by-side diffs.",
+      },
     ],
   }),
   component: ScanReport,
   errorComponent: ({ error }) => (
-    <div className="p-10 text-center text-sm text-muted-foreground">{error.message}</div>
+    <div className="p-10 text-center text-sm text-muted-foreground">
+      {error.message}
+    </div>
   ),
   notFoundComponent: () => (
-    <div className="p-10 text-center text-sm text-muted-foreground">Scan not found.</div>
+    <div className="p-10 text-center text-sm text-muted-foreground">
+      Scan not found.
+    </div>
   ),
 });
 
@@ -64,7 +71,6 @@ function ScanReport() {
     },
   });
 
-
   const highlights = useMemo(() => {
     if (!data) return [];
     return data.vulns
@@ -80,10 +86,12 @@ function ScanReport() {
   if (isLoading || !data) {
     return (
       <RequireAuth>
-      <AppShell title="Audit workspace">
-        <div className="p-10 text-sm text-muted-foreground">Loading report…</div>
-      </AppShell>
-   </RequireAuth>
+        <AppShell title="Audit workspace">
+          <div className="p-10 text-sm text-muted-foreground">
+            Loading report…
+          </div>
+        </AppShell>
+      </RequireAuth>
     );
   }
 
@@ -93,7 +101,10 @@ function ScanReport() {
   const handleLineClick = (vulnId: string) => {
     setActiveId(vulnId);
     requestAnimationFrame(() => {
-      cardRefs.current[vulnId]?.scrollIntoView({ behavior: "smooth", block: "center" });
+      cardRefs.current[vulnId]?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
     });
   };
 
@@ -111,115 +122,136 @@ function ScanReport() {
     setPatchedLines((prev) => new Set([...prev, ...lines]));
     setFlashLines(lines);
     setApplied((prev) => ({ ...prev, [v.id]: true }));
-    toast.success("Patch applied", { description: `Lines ${v.line_start}-${v.line_end} secured` });
+    toast.success("Patch applied", {
+      description: `Lines ${v.line_start}-${v.line_end} secured`,
+    });
     setTimeout(() => setFlashLines(new Set()), 1500);
   };
 
   const appliedCount = Object.values(applied).filter(Boolean).length;
 
   return (
-   <RequireAuth>
-    <AppShell
-      title={scan.project_name}
-      subtitle={`${scan.file_type} · ${new Date(scan.created_at).toLocaleString()} · ${vulns.length} findings`}
-      actions={
-        <Button asChild variant="ghost" size="sm">
-          <Link to="/dashboard"><ArrowLeft className="mr-1 h-3.5 w-3.5" />Dashboard</Link>
-        </Button>
-      }
-    >
-      <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(340px,380px)_minmax(380px,440px)] lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">
-        {/* LEFT — Code Vault */}
-        <section className="min-w-0">
-          <CodeVault
-            code={displayedCode || "// (no source available)"}
-            highlights={highlights}
-            activeVulnId={activeId}
-            patchedLines={new Set([...patchedLines, ...flashLines])}
-            onLineClick={handleLineClick}
-          />
-        </section>
+    <RequireAuth>
+      <AppShell
+        title={scan.project_name}
+        subtitle={`${scan.file_type} · ${new Date(scan.created_at).toLocaleString()} · ${vulns.length} findings`}
+        actions={
+          <Button asChild variant="ghost" size="sm">
+            <Link to="/dashboard">
+              <ArrowLeft className="mr-1 h-3.5 w-3.5" />
+              Dashboard
+            </Link>
+          </Button>
+        }
+      >
+        <div className="grid gap-3 p-3 xl:grid-cols-[minmax(0,1fr)_minmax(340px,380px)_minmax(380px,440px)] lg:grid-cols-[minmax(0,1fr)_minmax(380px,440px)]">
+          {/* LEFT — Code Vault */}
+          <section className="min-w-0">
+            <CodeVault
+              code={displayedCode || "// (no source available)"}
+              highlights={highlights}
+              activeVulnId={activeId}
+              patchedLines={new Set([...patchedLines, ...flashLines])}
+              onLineClick={handleLineClick}
+            />
+          </section>
 
-        {/* MIDDLE — AI Copilot Chat */}
-        <section className="min-w-0 h-[calc(100vh-3.5rem)]">
-          <CopilotChat
-            sourceCode={displayedCode}
-            fileType={scan.file_type}
-            onApplyCode={(code) => {
-              setLiveCode(code);
-              setPatchedLines(new Set());
-              setFlashLines(new Set());
-            }}
-          />
-        </section>
+          {/* MIDDLE — AI Copilot Chat */}
+          <section className="min-w-0 h-[calc(100vh-3.5rem)]">
+            <CopilotChat
+              sourceCode={displayedCode}
+              fileType={scan.file_type}
+              onApplyCode={(code) => {
+                setLiveCode(code);
+                setPatchedLines(new Set());
+                setFlashLines(new Set());
+              }}
+            />
+          </section>
 
-
-        {/* RIGHT — Actionable Audit Panel */}
-        <aside className="flex min-h-0 flex-col gap-3">
-          <Card className="border-primary/30 bg-gradient-to-br from-card to-card/50 p-4 glow-primary">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Integrity Score</div>
-                <div className="mt-1 flex items-baseline gap-2">
-                  <span className="text-3xl font-bold tabular-nums text-primary">{scan.health_score}</span>
-                  <span className="text-xs text-muted-foreground">/ 100</span>
+          {/* RIGHT — Actionable Audit Panel */}
+          <aside className="flex min-h-0 flex-col gap-3">
+            <Card className="border-primary/30 bg-gradient-to-br from-card to-card/50 p-4 glow-primary">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                    Integrity Score
+                  </div>
+                  <div className="mt-1 flex items-baseline gap-2">
+                    <span className="text-3xl font-bold tabular-nums text-primary">
+                      {scan.health_score}
+                    </span>
+                    <span className="text-xs text-muted-foreground">/ 100</span>
+                  </div>
                 </div>
+                <ShieldCheck className="h-8 w-8 text-primary" />
               </div>
-              <ShieldCheck className="h-8 w-8 text-primary" />
-            </div>
-            <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
-              {(["critical","high","medium","low"] as Severity[]).map((s) => (
-                <div key={s} className="rounded-md border border-border/60 bg-muted/20 py-1.5">
-                  <div className="text-sm font-bold tabular-nums">{scan.vulnerabilities_count?.[s] ?? 0}</div>
-                  <div className="text-[9px] uppercase tracking-widest text-muted-foreground">{s}</div>
+              <div className="mt-3 grid grid-cols-4 gap-1.5 text-center">
+                {SEVERITIES.map((s) => (
+                  <div
+                    key={s}
+                    className="rounded-md border border-border/60 bg-muted/20 py-1.5"
+                  >
+                    <div className="text-sm font-bold tabular-nums">
+                      {scan.vulnerabilities_count?.[s] ?? 0}
+                    </div>
+                    <div className="text-[9px] uppercase tracking-widest text-muted-foreground">
+                      {s}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {appliedCount > 0 && (
+                <div className="mt-3 flex items-center gap-2 rounded-md border border-low/40 bg-low/10 px-2.5 py-1.5 text-[11px] text-low animate-fade-in">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {appliedCount} patch{appliedCount === 1 ? "" : "es"} applied
                 </div>
-              ))}
+              )}
+            </Card>
+
+            <div className="flex items-center justify-between px-1">
+              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                Findings ({vulns.length})
+              </h2>
+              <span className="text-[10px] text-muted-foreground">
+                click a line to inspect
+              </span>
             </div>
-            {appliedCount > 0 && (
-              <div className="mt-3 flex items-center gap-2 rounded-md border border-low/40 bg-low/10 px-2.5 py-1.5 text-[11px] text-low animate-fade-in">
-                <Sparkles className="h-3.5 w-3.5" />
-                {appliedCount} patch{appliedCount === 1 ? "" : "es"} applied
-              </div>
-            )}
-          </Card>
 
-          <div className="flex items-center justify-between px-1">
-            <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Findings ({vulns.length})
-            </h2>
-            <span className="text-[10px] text-muted-foreground">click a line to inspect</span>
-          </div>
-
-          <div className="flex-1 space-y-3 overflow-auto pb-6 pr-1">
-            {vulns.length === 0 ? (
-              <Card className="border-low/40 bg-low/5 p-8 text-center">
-                <ShieldCheck className="mx-auto h-12 w-12 text-low" />
-                <div className="mt-3 text-sm font-medium">All clear</div>
-                <p className="mt-1 text-xs text-muted-foreground">No vulnerabilities detected.</p>
-              </Card>
-            ) : (
-              vulns.map((v) => (
-                <VulnCard
-                  key={v.id}
-                  ref={(el) => { cardRefs.current[v.id] = el; }}
-                  vuln={v}
-                  expanded={activeId === v.id}
-                  applied={!!applied[v.id]}
-                  onToggle={() => handleToggle(v.id)}
-                  onApply={() => handleApply(v)}
-                />
-              ))
-            )}
-          </div>
-        </aside>
-      </div>
-      <WorkspaceActionBar
-        scanId={scan.id}
-        projectName={scan.project_name}
-        appliedCount={appliedCount}
-        totalFindings={vulns.length}
-      />
-    </AppShell>
-  </RequireAuth>
+            <div className="flex-1 space-y-3 overflow-auto pb-6 pr-1">
+              {vulns.length === 0 ? (
+                <Card className="border-low/40 bg-low/5 p-8 text-center">
+                  <ShieldCheck className="mx-auto h-12 w-12 text-low" />
+                  <div className="mt-3 text-sm font-medium">All clear</div>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    No vulnerabilities detected.
+                  </p>
+                </Card>
+              ) : (
+                vulns.map((v) => (
+                  <VulnCard
+                    key={v.id}
+                    ref={(el) => {
+                      cardRefs.current[v.id] = el;
+                    }}
+                    vuln={v}
+                    expanded={activeId === v.id}
+                    applied={!!applied[v.id]}
+                    onToggle={() => handleToggle(v.id)}
+                    onApply={() => handleApply(v)}
+                  />
+                ))
+              )}
+            </div>
+          </aside>
+        </div>
+        <WorkspaceActionBar
+          scanId={scan.id}
+          projectName={scan.project_name}
+          appliedCount={appliedCount}
+          totalFindings={vulns.length}
+        />
+      </AppShell>
+    </RequireAuth>
   );
 }

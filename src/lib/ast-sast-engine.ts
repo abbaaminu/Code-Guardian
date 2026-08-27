@@ -48,12 +48,22 @@ const TAINT_SOURCE_PATTERNS = [
   /^location\.(search|hash|href)\b/,
 ];
 
-const SINK_CALLEES = new Set(["exec", "execSync", "spawn", "spawnSync", "eval", "Function"]);
+const SINK_CALLEES = new Set([
+  "exec",
+  "execSync",
+  "spawn",
+  "spawnSync",
+  "eval",
+  "Function",
+]);
 const SQL_CALLEE_HINT = /^(query|execute|raw|exec)$/i;
 const SQL_KEYWORD = /\b(SELECT|INSERT|UPDATE|DELETE|DROP|UNION)\b/i;
-const SECRET_NAME_HINT = /(api[_-]?key|secret|password|passwd|token|service_role|access_key|private_key)/i;
-const PLACEHOLDER_VALUE = /^(your[_-]|xxx|changeme|placeholder|example|<|\$\{|process\.env)/i;
-const SANITIZER_NAME_HINT = /(sanitize|escape|purify|encodeURIComponent|parameteriz|prepare)/i;
+const SECRET_NAME_HINT =
+  /(api[_-]?key|secret|password|passwd|token|service_role|access_key|private_key)/i;
+const PLACEHOLDER_VALUE =
+  /^(your[_-]|xxx|changeme|placeholder|example|<|\$\{|process\.env)/i;
+const SANITIZER_NAME_HINT =
+  /(sanitize|escape|purify|encodeURIComponent|parameteriz|prepare)/i;
 
 function severityOf(cwe: string): Severity {
   switch (cwe) {
@@ -79,7 +89,9 @@ function scriptKindFor(fileType: string): ts.ScriptKind {
 }
 
 export function isAstSupported(fileType: string): boolean {
-  return ["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(fileType.toLowerCase().replace(/^\./, ""));
+  return ["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(
+    fileType.toLowerCase().replace(/^\./, ""),
+  );
 }
 
 export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
@@ -92,9 +104,13 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     scriptKindFor(fileType),
   );
 
-  const lineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1;
-  const endLineOf = (node: ts.Node) => sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
-  const textOf = (node: ts.Node) => node.getText(sourceFile).trim().slice(0, 400);
+  const lineOf = (node: ts.Node) =>
+    sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line +
+    1;
+  const endLineOf = (node: ts.Node) =>
+    sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
+  const textOf = (node: ts.Node) =>
+    node.getText(sourceFile).trim().slice(0, 400);
 
   // --- Pass 1: tag locally-declared variables that are assigned from a
   // request-ish source expression. Scoped per-file (function boundaries are not
@@ -107,9 +123,16 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
   }
 
   function collectTaint(node: ts.Node) {
-    if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.name)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      ts.isIdentifier(node.name)
+    ) {
       const initText = textOf(node.initializer);
-      if (isTaintedExpressionText(initText) || [...taintedNames].some((n) => initText.startsWith(n + "."))) {
+      if (
+        isTaintedExpressionText(initText) ||
+        [...taintedNames].some((n) => initText.startsWith(n + "."))
+      ) {
         taintedNames.add(node.name.text);
       }
     }
@@ -124,10 +147,16 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     if (ts.isTemplateExpression(expr)) {
       return expr.templateSpans.some((s) => expressionIsTainted(s.expression));
     }
-    if (ts.isBinaryExpression(expr) && expr.operatorToken.kind === ts.SyntaxKind.PlusToken) {
+    if (
+      ts.isBinaryExpression(expr) &&
+      expr.operatorToken.kind === ts.SyntaxKind.PlusToken
+    ) {
       return expressionIsTainted(expr.left) || expressionIsTainted(expr.right);
     }
-    if (ts.isPropertyAccessExpression(expr) || ts.isElementAccessExpression(expr)) {
+    if (
+      ts.isPropertyAccessExpression(expr) ||
+      ts.isElementAccessExpression(expr)
+    ) {
       return expressionIsTainted(expr.expression);
     }
     return false;
@@ -137,7 +166,11 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     let cur: ts.Node | undefined = expr.parent;
     // walk up a couple of call layers looking for a sanitizer-named wrapper call
     for (let i = 0; i < 3 && cur; i++, cur = cur.parent) {
-      if (ts.isCallExpression(cur) && SANITIZER_NAME_HINT.test(cur.expression.getText(sourceFile))) return true;
+      if (
+        ts.isCallExpression(cur) &&
+        SANITIZER_NAME_HINT.test(cur.expression.getText(sourceFile))
+      )
+        return true;
     }
     return false;
   }
@@ -156,20 +189,38 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
   function visit(node: ts.Node) {
     // --- Hardcoded secret: `identifier/property = "literal"` where the name looks
     // like a credential and the value isn't an env-var reference / obvious placeholder.
-    if (ts.isVariableDeclaration(node) && node.initializer && ts.isIdentifier(node.name)) {
+    if (
+      ts.isVariableDeclaration(node) &&
+      node.initializer &&
+      ts.isIdentifier(node.name)
+    ) {
       checkSecretAssignment(node.name.text, node.initializer, node);
     }
-    if (ts.isPropertyAssignment(node) && ts.isIdentifier(node.name) && node.initializer) {
+    if (
+      ts.isPropertyAssignment(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer
+    ) {
       checkSecretAssignment(node.name.text, node.initializer, node);
     }
-    if (ts.isBinaryExpression(node) && node.operatorToken.kind === ts.SyntaxKind.EqualsToken) {
+    if (
+      ts.isBinaryExpression(node) &&
+      node.operatorToken.kind === ts.SyntaxKind.EqualsToken
+    ) {
       const left = node.left;
-      const name = ts.isPropertyAccessExpression(left) ? left.name.text : ts.isIdentifier(left) ? left.text : null;
+      const name = ts.isPropertyAccessExpression(left)
+        ? left.name.text
+        : ts.isIdentifier(left)
+          ? left.text
+          : null;
       if (name) checkSecretAssignment(name, node.right, node);
     }
 
     // --- dangerouslySetInnerHTML: real JSX-attribute detection, not a regex on the line.
-    if (ts.isJsxAttribute(node) && node.name.getText(sourceFile) === "dangerouslySetInnerHTML") {
+    if (
+      ts.isJsxAttribute(node) &&
+      node.name.getText(sourceFile) === "dangerouslySetInnerHTML"
+    ) {
       findings.push({
         title: "Dangerous HTML Rendering (XSS)",
         cwe_id: "CWE-79",
@@ -191,7 +242,8 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
       ts.isPropertyAccessExpression(node.left) &&
       node.left.name.text === "innerHTML"
     ) {
-      const tainted = expressionIsTainted(node.right) && !wrappedInSanitizer(node.right);
+      const tainted =
+        expressionIsTainted(node.right) && !wrappedInSanitizer(node.right);
       if (tainted || !ts.isStringLiteralLike(node.right)) {
         findings.push({
           title: "Dangerous DOM Sink (innerHTML)",
@@ -218,7 +270,8 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
         if (taintedArg && !wrappedInSanitizer(taintedArg)) {
           findings.push({
             title: `Command/Code Injection via ${name}() with tainted input`,
-            cwe_id: name === "eval" || name === "Function" ? "CWE-94" : "CWE-78",
+            cwe_id:
+              name === "eval" || name === "Function" ? "CWE-94" : "CWE-78",
             severity: "critical",
             vulnerable_code_block: textOf(node),
             remediation_steps:
@@ -232,11 +285,11 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
         } else if (dynamicArg) {
           findings.push({
             title: `Dynamic Code/Command Execution via ${name}()`,
-            cwe_id: name === "eval" || name === "Function" ? "CWE-94" : "CWE-77",
+            cwe_id:
+              name === "eval" || name === "Function" ? "CWE-94" : "CWE-77",
             severity: "high",
             vulnerable_code_block: textOf(node),
-            remediation_steps:
-              `${name}() is called with a non-literal argument. Confirm the value can never contain attacker-controlled data; prefer safer built-in APIs over dynamic evaluation.`,
+            remediation_steps: `${name}() is called with a non-literal argument. Confirm the value can never contain attacker-controlled data; prefer safer built-in APIs over dynamic evaluation.`,
             line_start: lineOf(node),
             line_end: endLineOf(node),
             engine: "ast",
@@ -254,7 +307,8 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
           if (!SQL_KEYWORD.test(text)) continue;
           const interpolated =
             (ts.isTemplateExpression(arg) && arg.templateSpans.length > 0) ||
-            (ts.isBinaryExpression(arg) && arg.operatorToken.kind === ts.SyntaxKind.PlusToken);
+            (ts.isBinaryExpression(arg) &&
+              arg.operatorToken.kind === ts.SyntaxKind.PlusToken);
           if (!interpolated) continue;
           const tainted = expressionIsTainted(arg);
           findings.push({
@@ -276,7 +330,11 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     ts.forEachChild(node, visit);
   }
 
-  function checkSecretAssignment(name: string, valueExpr: ts.Expression, reportNode: ts.Node) {
+  function checkSecretAssignment(
+    name: string,
+    valueExpr: ts.Expression,
+    reportNode: ts.Node,
+  ) {
     if (!SECRET_NAME_HINT.test(name)) return;
     if (!ts.isStringLiteralLike(valueExpr)) return; // process.env.X etc. are fine
     const text = valueExpr.getText(sourceFile);

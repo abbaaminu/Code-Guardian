@@ -1,0 +1,45 @@
+# Dependencies & Package Managers
+node_modules/
+.pnpm-store/
+.yarn/
+
+# Build Outputs & Bundles
+dist/
+build/
+out/
+.next/
+.nuxt/
+.output/
+*.bundle.js
+
+# Git & Editor Folders
+.git/
+.svn/
+.vscode/
+.idea/
+
+# Environment Variables & Secrets
+.env
+.env.*
+*.pem
+*.key
+
+# Cache & Temporary Files
+.cache/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.eslintcache
+
+# Media, Assets & Binary Files
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.svg
+*.ico
+*.pdf
+*.zip
+*.tar.gz
+*.mp4

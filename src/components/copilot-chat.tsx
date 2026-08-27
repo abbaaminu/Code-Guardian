@@ -5,7 +5,16 @@ import { cn } from "@/lib/utils";
 import { copilotRemediate } from "@/lib/scan.functions";
 import { diffLines, type DiffRow } from "@/lib/diff";
 import { toast } from "sonner";
-import { Bot, User, Send, Loader2, GitCompareArrows, Wand2, Sparkles, Terminal } from "lucide-react";
+import {
+  Bot,
+  User,
+  Send,
+  Loader2,
+  GitCompareArrows,
+  Wand2,
+  Sparkles,
+  Terminal,
+} from "lucide-react";
 
 type Msg =
   | { id: string; role: "user"; text: string }
@@ -29,13 +38,26 @@ function MiniDiff({ rows }: { rows: DiffRow[] }) {
   return (
     <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/40 bg-[oklch(0.12_0.02_250)]">
       <div className="border-r border-border/40">
-        <div className="border-b border-border/40 bg-critical/5 px-2 py-1 text-[9px] uppercase tracking-widest text-critical">Before</div>
+        <div className="border-b border-border/40 bg-critical/5 px-2 py-1 text-[9px] uppercase tracking-widest text-critical">
+          Before
+        </div>
         <pre className="max-h-56 overflow-auto font-mono text-[10.5px] leading-relaxed">
           <code className="block">
             {rows.map((r, i) => (
-              <div key={i} className={cn("grid grid-cols-[1.5rem_0.75rem_1fr]", (r.op === "del" || r.op === "mod") && "bg-critical/15", r.op === "ins" && "bg-muted/30 opacity-40")}>
-                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">{r.leftNo ?? ""}</span>
-                <span className="select-none text-center text-critical">{r.op === "del" || r.op === "mod" ? "-" : " "}</span>
+              <div
+                key={i}
+                className={cn(
+                  "grid grid-cols-[1.5rem_0.75rem_1fr]",
+                  (r.op === "del" || r.op === "mod") && "bg-critical/15",
+                  r.op === "ins" && "bg-muted/30 opacity-40",
+                )}
+              >
+                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">
+                  {r.leftNo ?? ""}
+                </span>
+                <span className="select-none text-center text-critical">
+                  {r.op === "del" || r.op === "mod" ? "-" : " "}
+                </span>
                 <span className="whitespace-pre pr-2">{r.left ?? " "}</span>
               </div>
             ))}
@@ -43,13 +65,26 @@ function MiniDiff({ rows }: { rows: DiffRow[] }) {
         </pre>
       </div>
       <div>
-        <div className="border-b border-border/40 bg-low/5 px-2 py-1 text-[9px] uppercase tracking-widest text-low">After</div>
+        <div className="border-b border-border/40 bg-low/5 px-2 py-1 text-[9px] uppercase tracking-widest text-low">
+          After
+        </div>
         <pre className="max-h-56 overflow-auto font-mono text-[10.5px] leading-relaxed">
           <code className="block">
             {rows.map((r, i) => (
-              <div key={i} className={cn("grid grid-cols-[1.5rem_0.75rem_1fr]", (r.op === "ins" || r.op === "mod") && "bg-low/15", r.op === "del" && "bg-muted/30 opacity-40")}>
-                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">{r.rightNo ?? ""}</span>
-                <span className="select-none text-center text-low">{r.op === "ins" || r.op === "mod" ? "+" : " "}</span>
+              <div
+                key={i}
+                className={cn(
+                  "grid grid-cols-[1.5rem_0.75rem_1fr]",
+                  (r.op === "ins" || r.op === "mod") && "bg-low/15",
+                  r.op === "del" && "bg-muted/30 opacity-40",
+                )}
+              >
+                <span className="select-none px-1 text-right text-muted-foreground/60 tabular-nums">
+                  {r.rightNo ?? ""}
+                </span>
+                <span className="select-none text-center text-low">
+                  {r.op === "ins" || r.op === "mod" ? "+" : " "}
+                </span>
                 <span className="whitespace-pre pr-2">{r.right ?? " "}</span>
               </div>
             ))}
@@ -71,7 +106,10 @@ function AssistantBubble({
   onToggleDiff: () => void;
   onApply: () => void;
 }) {
-  const rows = useMemo(() => diffLines(currentCode, msg.updatedCode), [currentCode, msg.updatedCode]);
+  const rows = useMemo(
+    () => diffLines(currentCode, msg.updatedCode),
+    [currentCode, msg.updatedCode],
+  );
   const changedCount = rows.filter((r) => r.op !== "equal").length;
   return (
     <div className="flex gap-2">
@@ -99,7 +137,9 @@ function AssistantBubble({
           >
             <GitCompareArrows className="h-3 w-3" />
             {msg.diffOpen ? "Hide" : "Review"} changes
-            <span className="ml-1 rounded bg-primary/20 px-1 text-[9px] text-primary">{changedCount}</span>
+            <span className="ml-1 rounded bg-primary/20 px-1 text-[9px] text-primary">
+              {changedCount}
+            </span>
           </button>
           <Button
             size="sm"
@@ -133,18 +173,27 @@ export function CopilotChat({
   const remediate = useServerFn(copilotRemediate);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [messages, loading]);
 
   const submit = async (text: string) => {
     const instruction = text.trim();
     if (!instruction || loading) return;
-    const userMsg: Msg = { id: crypto.randomUUID(), role: "user", text: instruction };
+    const userMsg: Msg = {
+      id: crypto.randomUUID(),
+      role: "user",
+      text: instruction,
+    };
     setMessages((m) => [...m, userMsg]);
     setInput("");
     setLoading(true);
     try {
-      const res = await remediate({ data: { instruction, source_code: sourceCode, file_type: fileType } });
+      const res = await remediate({
+        data: { instruction, source_code: sourceCode, file_type: fileType },
+      });
       setMessages((m) => [
         ...m,
         {
@@ -186,8 +235,12 @@ export function CopilotChat({
             <span className="absolute -right-0.5 -top-0.5 h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
           </div>
           <div>
-            <div className="text-[12px] font-semibold leading-tight">AI Remediation Copilot</div>
-            <div className="text-[9.5px] uppercase tracking-widest text-muted-foreground">natural language › secure code</div>
+            <div className="text-[12px] font-semibold leading-tight">
+              AI Remediation Copilot
+            </div>
+            <div className="text-[9.5px] uppercase tracking-widest text-muted-foreground">
+              natural language › secure code
+            </div>
           </div>
         </div>
         <span className="rounded border border-primary/40 bg-primary/10 px-1.5 py-0.5 font-mono text-[9px] uppercase tracking-widest text-primary">
@@ -195,13 +248,18 @@ export function CopilotChat({
         </span>
       </div>
 
-      <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+      <div
+        ref={scrollRef}
+        className="flex-1 space-y-3 overflow-y-auto px-3 py-3"
+      >
         {messages.length === 0 && (
           <div className="space-y-3 py-4 text-center">
             <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-primary/40 bg-primary/10">
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
-            <div className="text-[12px] font-medium">Ask the Copilot anything about this file</div>
+            <div className="text-[12px] font-medium">
+              Ask the Copilot anything about this file
+            </div>
             <div className="space-y-1.5 px-2">
               {SUGGESTIONS.map((s) => (
                 <button
@@ -233,15 +291,25 @@ export function CopilotChat({
               currentCode={sourceCode}
               onToggleDiff={() =>
                 setMessages((prev) =>
-                  prev.map((x, xi) => (xi === i && x.role === "assistant" ? { ...x, diffOpen: !x.diffOpen } : x)),
+                  prev.map((x, xi) =>
+                    xi === i && x.role === "assistant"
+                      ? { ...x, diffOpen: !x.diffOpen }
+                      : x,
+                  ),
                 )
               }
               onApply={() => {
                 onApplyCode(m.updatedCode);
                 setMessages((prev) =>
-                  prev.map((x, xi) => (xi === i && x.role === "assistant" ? { ...x, applied: true } : x)),
+                  prev.map((x, xi) =>
+                    xi === i && x.role === "assistant"
+                      ? { ...x, applied: true }
+                      : x,
+                  ),
                 );
-                toast.success("Copilot patch applied", { description: m.summary });
+                toast.success("Copilot patch applied", {
+                  description: m.summary,
+                });
               }}
             />
           ),
@@ -267,7 +335,9 @@ export function CopilotChat({
         }}
         className="flex items-center gap-1.5 border-t border-border/60 bg-[oklch(0.14_0.02_250)]/95 px-2 py-2"
       >
-        <span className="select-none pl-1 font-mono text-[13px] text-primary">›</span>
+        <span className="select-none pl-1 font-mono text-[13px] text-primary">
+          ›
+        </span>
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
@@ -285,7 +355,11 @@ export function CopilotChat({
           disabled={loading || !input.trim() || !sourceCode.trim()}
           className="h-7 w-7 shrink-0 bg-primary p-0 text-primary-foreground hover:opacity-90"
         >
-          {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+          {loading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <Send className="h-3.5 w-3.5" />
+          )}
         </Button>
       </form>
     </div>

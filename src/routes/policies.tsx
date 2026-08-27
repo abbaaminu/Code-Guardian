@@ -98,7 +98,8 @@ const PRESETS: {
     label: "Dev-Friendly",
     icon: Wrench,
     description: "Only medium & high impact: OWASP + Secret Scanning.",
-    match: (p) => p.category === "OWASP Top 10" || p.category === "Secret Scanning",
+    match: (p) =>
+      p.category === "OWASP Top 10" || p.category === "Secret Scanning",
   },
   {
     key: "custom",
@@ -131,7 +132,9 @@ function Policies() {
       );
       await qc.invalidateQueries({ queryKey: ["policies"] });
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(
+        e instanceof Error ? e.message : "Could not update security policy.",
+      );
     }
   };
 
@@ -157,7 +160,9 @@ function Policies() {
         description: `${changes.length} polic${changes.length === 1 ? "y" : "ies"} updated. Future audits will reflect this configuration.`,
       });
     } catch (e) {
-      toast.error((e as Error).message);
+      toast.error(
+        e instanceof Error ? e.message : "Could not apply policy preset.",
+      );
     } finally {
       setApplyingPreset(null);
     }
@@ -178,189 +183,212 @@ function Policies() {
 
   return (
     <RequireAuth>
-    <AppShell
-      title="Security Policies"
-      subtitle={`${enabledCount} / ${policies.length} active · applied on every scan`}
-    >
-      <div className="mx-auto max-w-7xl px-6 py-8">
-        <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
-          {/* Preset sidebar */}
-          <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
-            <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-              Quick-select presets
-            </div>
-            {PRESETS.map((preset) => {
-              const Icon = preset.icon;
-              const isActive = activePreset === preset.key;
-              const isApplying = applyingPreset === preset.key;
-              return (
-                <button
-                  key={preset.key}
-                  onClick={() => applyPreset(preset)}
-                  disabled={applyingPreset !== null}
-                  className={cn(
-                    "group w-full rounded-lg border p-3 text-left transition",
-                    isActive
-                      ? "border-primary/60 bg-primary/5 glow-primary"
-                      : "border-border/60 bg-card/40 hover:border-border hover:bg-card/70",
-                    applyingPreset !== null && !isApplying && "opacity-50",
-                  )}
-                >
-                  <div className="flex items-center gap-2">
-                    <div
-                      className={cn(
-                        "flex h-7 w-7 items-center justify-center rounded-md",
-                        isActive
-                          ? "bg-primary/20 text-primary"
-                          : "bg-muted text-muted-foreground group-hover:text-foreground",
-                      )}
-                    >
-                      <Icon className="h-3.5 w-3.5" />
-                    </div>
-                    <span className="text-sm font-medium">{preset.label}</span>
-                    {isApplying && (
-                      <span className="ml-auto text-[10px] text-muted-foreground">applying…</span>
-                    )}
-                  </div>
-                  <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
-                    {preset.description}
-                  </p>
-                </button>
-              );
-            })}
-
-            <Card className="border-border/60 bg-card/40 p-3">
+      <AppShell
+        title="Security Policies"
+        subtitle={`${enabledCount} / ${policies.length} active · applied on every scan`}
+      >
+        <div className="mx-auto max-w-7xl px-6 py-8">
+          <div className="grid gap-6 lg:grid-cols-[260px_1fr]">
+            {/* Preset sidebar */}
+            <aside className="space-y-3 lg:sticky lg:top-20 lg:self-start">
               <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Compliance coverage
+                Quick-select presets
               </div>
-              <div className="mt-3 space-y-2">
-                {FRAMEWORKS.map((f) => {
-                  const items = policies.filter((p) => p.category === f.key);
-                  const on = items.filter((p) => p.enabled).length;
-                  return (
-                    <div key={f.key} className="flex items-center justify-between text-xs">
-                      <span className="truncate text-muted-foreground">{f.key}</span>
-                      <Badge variant="outline" className="border-border/60 font-mono text-[10px]">
-                        {on}/{items.length}
-                      </Badge>
-                    </div>
-                  );
-                })}
-              </div>
-            </Card>
-          </aside>
-
-          {/* Framework grid */}
-          <div className="space-y-6">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search policies (e.g. reentrancy, AWS, HIPAA)…"
-                className="pl-9"
-              />
-            </div>
-
-            {isLoading && (
-              <div className="text-sm text-muted-foreground">Loading policies…</div>
-            )}
-
-            {FRAMEWORKS.map((framework) => {
-              const items = filtered.filter((p) => p.category === framework.key);
-              if (items.length === 0 && query) return null;
-              const Icon = framework.icon;
-              const total = policies.filter((p) => p.category === framework.key).length;
-              const active = policies.filter(
-                (p) => p.category === framework.key && p.enabled,
-              ).length;
-              return (
-                <section key={framework.key} className="space-y-3">
-                  <div className="flex items-end justify-between gap-4">
-                    <div className="flex items-center gap-3">
+              {PRESETS.map((preset) => {
+                const Icon = preset.icon;
+                const isActive = activePreset === preset.key;
+                const isApplying = applyingPreset === preset.key;
+                return (
+                  <button
+                    key={preset.key}
+                    onClick={() => applyPreset(preset)}
+                    disabled={applyingPreset !== null}
+                    className={cn(
+                      "group w-full rounded-lg border p-3 text-left transition",
+                      isActive
+                        ? "border-primary/60 bg-primary/5 glow-primary"
+                        : "border-border/60 bg-card/40 hover:border-border hover:bg-card/70",
+                      applyingPreset !== null && !isApplying && "opacity-50",
+                    )}
+                  >
+                    <div className="flex items-center gap-2">
                       <div
                         className={cn(
-                          "flex h-9 w-9 items-center justify-center rounded-lg bg-card ring-1",
-                          framework.ring,
+                          "flex h-7 w-7 items-center justify-center rounded-md",
+                          isActive
+                            ? "bg-primary/20 text-primary"
+                            : "bg-muted text-muted-foreground group-hover:text-foreground",
                         )}
                       >
-                        <Icon className={cn("h-4 w-4", framework.tint)} />
+                        <Icon className="h-3.5 w-3.5" />
                       </div>
-                      <div>
-                        <h2 className="text-sm font-semibold tracking-tight">
-                          {framework.key}
-                        </h2>
-                        <p className="text-xs text-muted-foreground">{framework.blurb}</p>
-                      </div>
+                      <span className="text-sm font-medium">
+                        {preset.label}
+                      </span>
+                      {isApplying && (
+                        <span className="ml-auto text-[10px] text-muted-foreground">
+                          applying…
+                        </span>
+                      )}
                     </div>
-                    <Badge
-                      variant="outline"
-                      className="border-border/60 font-mono text-[10px]"
-                    >
-                      {active}/{total} active
-                    </Badge>
-                  </div>
+                    <p className="mt-2 text-xs leading-relaxed text-muted-foreground">
+                      {preset.description}
+                    </p>
+                  </button>
+                );
+              })}
 
-                  <div className="grid gap-3 md:grid-cols-2">
-                    {items.map((p) => (
-                      <Card
-                        key={p.id}
-                        className={cn(
-                          "relative overflow-hidden border-border/60 bg-card/60 p-4 transition",
-                          p.enabled && "ring-1 ring-primary/20",
-                        )}
+              <Card className="border-border/60 bg-card/40 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Compliance coverage
+                </div>
+                <div className="mt-3 space-y-2">
+                  {FRAMEWORKS.map((f) => {
+                    const items = policies.filter((p) => p.category === f.key);
+                    const on = items.filter((p) => p.enabled).length;
+                    return (
+                      <div
+                        key={f.key}
+                        className="flex items-center justify-between text-xs"
                       >
-                        {p.enabled && (
-                          <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
-                        )}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="flex items-center gap-2">
-                              <div
-                                className={cn(
-                                  "flex h-6 w-6 items-center justify-center rounded-md transition",
-                                  p.enabled
-                                    ? "bg-primary/20 text-primary"
-                                    : "bg-muted text-muted-foreground",
-                                )}
-                              >
-                                <ShieldCheck className="h-3.5 w-3.5" />
-                              </div>
-                              <h3 className="truncate text-sm font-medium">{p.name}</h3>
-                            </div>
-                            <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
-                              {p.description}
-                            </p>
-                          </div>
-                          <Switch
-                            checked={p.enabled}
-                            onCheckedChange={(v) => toggle(p, v)}
-                          />
-                        </div>
-                      </Card>
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
+                        <span className="truncate text-muted-foreground">
+                          {f.key}
+                        </span>
+                        <Badge
+                          variant="outline"
+                          className="border-border/60 font-mono text-[10px]"
+                        >
+                          {on}/{items.length}
+                        </Badge>
+                      </div>
+                    );
+                  })}
+                </div>
+              </Card>
+            </aside>
 
-            <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/40 px-4 py-3">
-              <p className="text-xs text-muted-foreground">
-                Changes apply to every future scan. Existing reports remain unchanged.
-              </p>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => applyPreset(PRESETS[0])}
-                disabled={applyingPreset !== null}
-              >
-                <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Enable everything
-              </Button>
+            {/* Framework grid */}
+            <div className="space-y-6">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Search policies (e.g. reentrancy, AWS, HIPAA)…"
+                  className="pl-9"
+                />
+              </div>
+
+              {isLoading && (
+                <div className="text-sm text-muted-foreground">
+                  Loading policies…
+                </div>
+              )}
+
+              {FRAMEWORKS.map((framework) => {
+                const items = filtered.filter(
+                  (p) => p.category === framework.key,
+                );
+                if (items.length === 0 && query) return null;
+                const Icon = framework.icon;
+                const total = policies.filter(
+                  (p) => p.category === framework.key,
+                ).length;
+                const active = policies.filter(
+                  (p) => p.category === framework.key && p.enabled,
+                ).length;
+                return (
+                  <section key={framework.key} className="space-y-3">
+                    <div className="flex items-end justify-between gap-4">
+                      <div className="flex items-center gap-3">
+                        <div
+                          className={cn(
+                            "flex h-9 w-9 items-center justify-center rounded-lg bg-card ring-1",
+                            framework.ring,
+                          )}
+                        >
+                          <Icon className={cn("h-4 w-4", framework.tint)} />
+                        </div>
+                        <div>
+                          <h2 className="text-sm font-semibold tracking-tight">
+                            {framework.key}
+                          </h2>
+                          <p className="text-xs text-muted-foreground">
+                            {framework.blurb}
+                          </p>
+                        </div>
+                      </div>
+                      <Badge
+                        variant="outline"
+                        className="border-border/60 font-mono text-[10px]"
+                      >
+                        {active}/{total} active
+                      </Badge>
+                    </div>
+
+                    <div className="grid gap-3 md:grid-cols-2">
+                      {items.map((p) => (
+                        <Card
+                          key={p.id}
+                          className={cn(
+                            "relative overflow-hidden border-border/60 bg-card/60 p-4 transition",
+                            p.enabled && "ring-1 ring-primary/20",
+                          )}
+                        >
+                          {p.enabled && (
+                            <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-primary/60 to-transparent" />
+                          )}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className={cn(
+                                    "flex h-6 w-6 items-center justify-center rounded-md transition",
+                                    p.enabled
+                                      ? "bg-primary/20 text-primary"
+                                      : "bg-muted text-muted-foreground",
+                                  )}
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                </div>
+                                <h3 className="truncate text-sm font-medium">
+                                  {p.name}
+                                </h3>
+                              </div>
+                              <p className="mt-1.5 text-xs leading-relaxed text-muted-foreground">
+                                {p.description}
+                              </p>
+                            </div>
+                            <Switch
+                              checked={p.enabled}
+                              onCheckedChange={(v) => toggle(p, v)}
+                            />
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </section>
+                );
+              })}
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/60 bg-card/40 px-4 py-3">
+                <p className="text-xs text-muted-foreground">
+                  Changes apply to every future scan. Existing reports remain
+                  unchanged.
+                </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => applyPreset(PRESETS[0])}
+                  disabled={applyingPreset !== null}
+                >
+                  <Sparkles className="mr-1.5 h-3.5 w-3.5" /> Enable everything
+                </Button>
+              </div>
             </div>
           </div>
         </div>
-      </div>
-    </AppShell>
-   </RequireAuth>
+      </AppShell>
+    </RequireAuth>
   );
 }

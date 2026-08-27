@@ -35,7 +35,9 @@ function loadKey(): Buffer {
   }
   const key = Buffer.from(raw, "base64");
   if (key.length !== 32) {
-    throw new Error(`VAULT_ENCRYPTION_KEY must decode to exactly 32 bytes for AES-256-GCM; got ${key.length}.`);
+    throw new Error(
+      `VAULT_ENCRYPTION_KEY must decode to exactly 32 bytes for AES-256-GCM; got ${key.length}.`,
+    );
   }
   return key;
 }
@@ -44,7 +46,10 @@ export function encryptSecret(plaintext: string): EncryptedPayload {
   const key = loadKey();
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, key, iv);
-  const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
+  const ciphertext = Buffer.concat([
+    cipher.update(plaintext, "utf8"),
+    cipher.final(),
+  ]);
   const authTag = cipher.getAuthTag();
 
   return {
@@ -56,7 +61,11 @@ export function encryptSecret(plaintext: string): EncryptedPayload {
 
 export function decryptSecret(payload: EncryptedPayload): string {
   const key = loadKey();
-  const decipher = createDecipheriv(ALGORITHM, key, Buffer.from(payload.iv, "base64"));
+  const decipher = createDecipheriv(
+    ALGORITHM,
+    key,
+    Buffer.from(payload.iv, "base64"),
+  );
   decipher.setAuthTag(Buffer.from(payload.authTag, "base64"));
   const plaintext = Buffer.concat([
     decipher.update(Buffer.from(payload.ciphertext, "base64")),

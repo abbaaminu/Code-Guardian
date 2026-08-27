@@ -1,5 +1,12 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useState, useCallback, useEffect, type ChangeEvent, type DragEvent } from "react";
+import {
+  useState,
+  useCallback,
+  useEffect,
+  useRef,
+  type ChangeEvent,
+  type DragEvent,
+} from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
@@ -8,8 +15,21 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { SeverityBadge } from "@/components/severity-badge";
 import { ScanSimulator } from "@/components/scan-simulator";
@@ -41,7 +61,7 @@ import {
   GitBranch,
   AlertCircle,
 } from "lucide-react";
-import type { Severity } from "@/lib/severity";
+import { SEVERITIES, type Severity } from "@/lib/severity";
 
 interface ScanRow {
   id: string;
@@ -69,11 +89,67 @@ const LANGUAGES = [
   "Rust",
 ];
 
+// L1: static UI metadata hoisted out of the render path so it isn't recreated
+// on every render.
+const STAT_CARD_META = [
+  { label: "Repos scanned", icon: ScanLine, tint: "text-primary" },
+  {
+    label: "Active critical exploits",
+    icon: ShieldAlert,
+    tint: "text-critical",
+  },
+  { label: "Avg code health score", icon: Activity, tint: "text-primary" },
+] as const;
+
+// L3: static scan-form metadata hoisted out of the ScanForm component.
+const SUPPORTED_EXT = [
+  "py",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "sol",
+  "go",
+  "rb",
+  "java",
+  "php",
+  "cs",
+  "rs",
+  "sql",
+  "txt",
+  "json",
+  "yml",
+  "yaml",
+  "sh",
+  "env",
+];
+
+const EXT_LANG_MAP: Record<string, string> = {
+  py: "Python",
+  js: "JavaScript",
+  ts: "TypeScript",
+  tsx: "TypeScript",
+  jsx: "JavaScript",
+  sol: "Solidity",
+  go: "Go",
+  rb: "Ruby",
+  java: "Java",
+  php: "PHP",
+  cs: "C#",
+  rs: "Rust",
+  dockerfile: "Docker",
+  sql: "SQL",
+};
+
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
     meta: [
       { title: "Scan Dashboard · SecurePulse" },
-      { name: "description", content: "Run and review AI-powered security scans across your projects." },
+      {
+        name: "description",
+        content:
+          "Run and review AI-powered security scans across your projects.",
+      },
     ],
   }),
   component: Dashboard,
@@ -85,7 +161,9 @@ function Dashboard() {
   const run = useServerFn(runScan);
   const list = useServerFn(listScans);
   const [completedScanId, setCompletedScanId] = useState<string | null>(null);
-  const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">("idle");
+  const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">(
+    "idle",
+  );
   const [exportScan, setExportScan] = useState<ScanRow | null>(null);
   const [copilotCode, setCopilotCode] = useState("");
   const [copilotFileType, setCopilotFileType] = useState("Python");
@@ -97,15 +175,21 @@ function Dashboard() {
         const res = await list();
         return (res || []) as unknown as ScanRow[];
       } catch (err) {
-        console.warn("Failed to fetch remote scan list, returning empty array:", err);
+        console.warn(
+          "Failed to fetch remote scan list, returning empty array:",
+          err,
+        );
         return [];
       }
     },
   });
 
   const scanMutation = useMutation({
-    mutationFn: async (input: { project_name: string; file_type: string; source_code: string }) =>
-      run({ data: input }),
+    mutationFn: async (input: {
+      project_name: string;
+      file_type: string;
+      source_code: string;
+    }) => run({ data: input }),
     onMutate: () => {
       setPhase("running");
       setCompletedScanId(null);
@@ -120,15 +204,22 @@ function Dashboard() {
     },
     onError: (e: Error) => {
       setPhase("failed");
-      toast.error("Scan error", { description: e.message || "Unable to complete security audit." });
+      toast.error("Scan error", {
+        description: e.message || "Unable to complete security audit.",
+      });
     },
   });
 
   const totals = {
     total: scans.length,
-    critical: scans.reduce((n, s) => n + (s.vulnerabilities_count?.critical ?? 0), 0),
+    critical: scans.reduce(
+      (n, s) => n + (s.vulnerabilities_count?.critical ?? 0),
+      0,
+    ),
     avgHealth: scans.length
-      ? Math.round(scans.reduce((n, s) => n + (s.health_score ?? 0), 0) / scans.length)
+      ? Math.round(
+          scans.reduce((n, s) => n + (s.health_score ?? 0), 0) / scans.length,
+        )
       : 0,
   };
 
@@ -140,7 +231,10 @@ function Dashboard() {
         title="Scan Dashboard"
         subtitle="Paste code, upload a file, or connect a repo to audit for OWASP, CWE, and secret exposure."
         actions={
-          <Link to="/policies" className="text-xs text-muted-foreground hover:text-foreground">
+          <Link
+            to="/policies"
+            className="text-xs text-muted-foreground hover:text-foreground"
+          >
             Manage policies →
           </Link>
         }
@@ -191,8 +285,12 @@ function Dashboard() {
 
           <section id="history" className="space-y-3">
             <div className="flex items-baseline justify-between">
-              <h2 className="text-base font-semibold tracking-tight">Recent audits</h2>
-              <span className="text-xs text-muted-foreground">{scans.length} scans</span>
+              <h2 className="text-base font-semibold tracking-tight">
+                Recent audits
+              </h2>
+              <span className="text-xs text-muted-foreground">
+                {scans.length} scans
+              </span>
             </div>
             <Card className="overflow-hidden">
               <Table>
@@ -209,15 +307,22 @@ function Dashboard() {
                 <TableBody>
                   {isLoading && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
+                      <TableCell
+                        colSpan={6}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
                         Loading…
                       </TableCell>
                     </TableRow>
                   )}
                   {!isLoading && scans.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">
-                        No scans yet — submit code above to run your first audit.
+                      <TableCell
+                        colSpan={6}
+                        className="py-10 text-center text-sm text-muted-foreground"
+                      >
+                        No scans yet — submit code above to run your first
+                        audit.
                       </TableCell>
                     </TableRow>
                   )}
@@ -225,17 +330,27 @@ function Dashboard() {
                     const top = topSeverity(s.vulnerabilities_count);
                     return (
                       <TableRow key={s.id}>
-                        <TableCell className="font-medium">{s.project_name}</TableCell>
+                        <TableCell className="font-medium">
+                          {s.project_name}
+                        </TableCell>
                         <TableCell>
                           <span className="rounded-md border border-border/60 bg-muted/40 px-2 py-0.5 text-xs">
                             {s.file_type}
                           </span>
                         </TableCell>
                         <TableCell className="text-xs text-muted-foreground">
-                          {s.created_at ? new Date(s.created_at).toLocaleString() : "Just now"}
+                          {s.created_at
+                            ? new Date(s.created_at).toLocaleString()
+                            : "Just now"}
                         </TableCell>
                         <TableCell>
-                          {top ? <SeverityBadge severity={top} /> : <span className="text-xs text-muted-foreground">clean</span>}
+                          {top ? (
+                            <SeverityBadge severity={top} />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              clean
+                            </span>
+                          )}
                         </TableCell>
                         <TableCell>
                           <HealthBar score={s.health_score ?? 100} />
@@ -244,18 +359,26 @@ function Dashboard() {
                           <DropdownMenu>
                             <DropdownMenuTrigger asChild>
                               <Button variant="ghost" size="sm">
-                                Report <ChevronDown className="ml-1 h-3.5 w-3.5" />
+                                Report{" "}
+                                <ChevronDown className="ml-1 h-3.5 w-3.5" />
                               </Button>
                             </DropdownMenuTrigger>
                             <DropdownMenuContent align="end" className="w-56">
                               <DropdownMenuItem asChild>
-                                <Link to="/scans/$id" params={{ id: s.id }} className="cursor-pointer">
+                                <Link
+                                  to="/scans/$id"
+                                  params={{ id: s.id }}
+                                  className="cursor-pointer"
+                                >
                                   <ExternalLink className="mr-2 h-3.5 w-3.5" />
                                   View online workspace
                                 </Link>
                               </DropdownMenuItem>
                               <DropdownMenuSeparator />
-                              <DropdownMenuItem onSelect={() => setExportScan(s)} className="cursor-pointer">
+                              <DropdownMenuItem
+                                onSelect={() => setExportScan(s)}
+                                className="cursor-pointer"
+                              >
                                 <FileDown className="mr-2 h-3.5 w-3.5" />
                                 Export executive summary
                               </DropdownMenuItem>
@@ -282,21 +405,29 @@ function Dashboard() {
   );
 }
 
-function StatCards({ total, critical, avgHealth }: { total: number; critical: number; avgHealth: number }) {
-  const cards = [
-    { label: "Repos scanned", value: total, icon: ScanLine, tint: "text-primary" },
-    { label: "Active critical exploits", value: critical, icon: ShieldAlert, tint: "text-critical" },
-    { label: "Avg code health score", value: `${avgHealth}/100`, icon: Activity, tint: "text-primary" },
-  ];
+function StatCards({
+  total,
+  critical,
+  avgHealth,
+}: {
+  total: number;
+  critical: number;
+  avgHealth: number;
+}) {
+  const values = [total, critical, `${avgHealth}/100`] as const;
   return (
     <div className="grid gap-4 md:grid-cols-3">
-      {cards.map((c) => (
+      {STAT_CARD_META.map((c, i) => (
         <Card key={c.label} className="border-border/60 bg-card/60 p-5">
           <div className="flex items-center justify-between">
-            <span className="text-xs uppercase tracking-widest text-muted-foreground">{c.label}</span>
+            <span className="text-xs uppercase tracking-widest text-muted-foreground">
+              {c.label}
+            </span>
             <c.icon className={`h-4 w-4 ${c.tint}`} />
           </div>
-          <div className="mt-3 text-3xl font-semibold tracking-tight">{c.value}</div>
+          <div className="mt-3 text-3xl font-semibold tracking-tight">
+            {values[i]}
+          </div>
         </Card>
       ))}
     </div>
@@ -304,21 +435,36 @@ function StatCards({ total, critical, avgHealth }: { total: number; critical: nu
 }
 
 function HealthBar({ score }: { score: number }) {
-  const color = score >= 80 ? "bg-low" : score >= 50 ? "bg-medium" : score >= 30 ? "bg-high" : "bg-critical";
+  // M10: clamp so an out-of-range/NaN health score can't render a broken bar
+  // (negative/oversized widths) or a bogus color bucket.
+  const clamped = Number.isFinite(score)
+    ? Math.max(0, Math.min(100, Math.round(score)))
+    : 0;
+  const color =
+    clamped >= 80
+      ? "bg-low"
+      : clamped >= 50
+        ? "bg-medium"
+        : clamped >= 30
+          ? "bg-high"
+          : "bg-critical";
   return (
     <div className="flex items-center gap-2">
       <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-        <div className={`h-full ${color}`} style={{ width: `${score}%` }} />
+        <div className={`h-full ${color}`} style={{ width: `${clamped}%` }} />
       </div>
-      <span className="tabular-nums text-xs text-muted-foreground">{score}</span>
+      <span className="tabular-nums text-xs text-muted-foreground">
+        {clamped}
+      </span>
     </div>
   );
 }
 
-function topSeverity(counts: Record<Severity, number> | undefined): Severity | null {
+function topSeverity(
+  counts: Record<Severity, number> | undefined,
+): Severity | null {
   if (!counts) return null;
-  const order: Severity[] = ["critical", "high", "medium", "low"];
-  for (const s of order) if ((counts[s] ?? 0) > 0) return s;
+  for (const s of SEVERITIES) if ((counts[s] ?? 0) > 0) return s;
   return null;
 }
 
@@ -328,7 +474,11 @@ function ScanForm({
   onCodeChange,
 }: {
   submitting: boolean;
-  onSubmit: (v: { project_name: string; file_type: string; source_code: string }) => void;
+  onSubmit: (v: {
+    project_name: string;
+    file_type: string;
+    source_code: string;
+  }) => void;
   onCodeChange?: (code: string, fileType: string) => void;
 }) {
   const [projectName, setProjectName] = useState("");
@@ -337,65 +487,37 @@ function ScanForm({
   const [tab, setTab] = useState("paste");
   const [error, setError] = useState<string | null>(null);
 
+  // L4: keep the latest onCodeChange in a ref so the sync effect below never
+  // captures a stale prop from an earlier render (the parent passes an inline
+  // arrow that changes identity every render).
+  const onCodeChangeRef = useRef(onCodeChange);
   useEffect(() => {
-    onCodeChange?.(code, fileType);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [code, fileType]);
+    onCodeChangeRef.current = onCodeChange;
+  }, [onCodeChange]);
 
-  const SUPPORTED_EXT = [
-    "py",
-    "js",
-    "ts",
-    "tsx",
-    "jsx",
-    "sol",
-    "go",
-    "rb",
-    "java",
-    "php",
-    "cs",
-    "rs",
-    "sql",
-    "txt",
-    "json",
-    "yml",
-    "yaml",
-    "sh",
-    "env",
-  ];
-  const LANG_MAP: Record<string, string> = {
-    py: "Python",
-    js: "JavaScript",
-    ts: "TypeScript",
-    tsx: "TypeScript",
-    jsx: "JavaScript",
-    sol: "Solidity",
-    go: "Go",
-    rb: "Ruby",
-    java: "Java",
-    php: "PHP",
-    cs: "C#",
-    rs: "Rust",
-    dockerfile: "Docker",
-    sql: "SQL",
-  };
+  useEffect(() => {
+    onCodeChangeRef.current?.(code, fileType);
+  }, [code, fileType]);
 
   const handleFile = useCallback(
     async (file: File) => {
       setError(null);
       const nameLower = file.name.toLowerCase();
       const ext = nameLower.split(".").pop() ?? "";
-      const isDockerfile = nameLower === "dockerfile" || nameLower.endsWith(".dockerfile");
+      const isDockerfile =
+        nameLower === "dockerfile" || nameLower.endsWith(".dockerfile");
 
       if (!isDockerfile && !SUPPORTED_EXT.includes(ext)) {
-        setError(`Unsupported file type ".${ext}". Try a source file such as .py, .js, .ts, .sol, .go, or a Dockerfile.`);
+        setError(
+          `Unsupported file type ".${ext}". Try a source file such as .py, .js, .ts, .sol, .go, or a Dockerfile.`,
+        );
         return;
       }
       const text = await file.text();
       setCode(text.slice(0, 60000));
       if (!projectName) setProjectName(file.name);
       if (isDockerfile) setFileType("Docker");
-      else if (LANG_MAP[ext]) setFileType(LANG_MAP[ext]);
+      else if (EXT_LANG_MAP[ext]) setFileType(EXT_LANG_MAP[ext]);
     },
     [projectName],
   );
@@ -421,18 +543,26 @@ function ScanForm({
       return;
     }
     if (code.trim().length < 10) {
-      setError("That snippet is too short to audit — paste at least a full function or file.");
+      setError(
+        "That snippet is too short to audit — paste at least a full function or file.",
+      );
       return;
     }
     setError(null);
-    onSubmit({ project_name: projectName.trim(), file_type: fileType, source_code: code });
+    onSubmit({
+      project_name: projectName.trim(),
+      file_type: fileType,
+      source_code: code,
+    });
   };
 
   return (
     <Card className="border-border/60 bg-card/60 p-5">
       <div className="mb-4 grid gap-3 md:grid-cols-[1fr_180px]">
         <div>
-          <label className="mb-1 block text-xs uppercase tracking-widest text-muted-foreground">Project name</label>
+          <label className="mb-1 block text-xs uppercase tracking-widest text-muted-foreground">
+            Project name
+          </label>
           <Input
             value={projectName}
             onChange={(e) => setProjectName(e.target.value)}
@@ -440,7 +570,9 @@ function ScanForm({
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs uppercase tracking-widest text-muted-foreground">Language</label>
+          <label className="mb-1 block text-xs uppercase tracking-widest text-muted-foreground">
+            Language
+          </label>
           <Select value={fileType} onValueChange={setFileType}>
             <SelectTrigger>
               <SelectValue />
@@ -503,7 +635,11 @@ function ScanForm({
                 accept=".py,.js,.ts,.tsx,.sol,.go,.rb,.java,.php,.cs,.rs,.sql,Dockerfile,.txt"
               />
             </label>
-            {code && <div className="text-xs text-muted-foreground">Loaded {code.length.toLocaleString()} characters</div>}
+            {code && (
+              <div className="text-xs text-muted-foreground">
+                Loaded {code.length.toLocaleString()} characters
+              </div>
+            )}
           </div>
         </TabsContent>
         <TabsContent value="repo" className="mt-3">
@@ -522,7 +658,10 @@ function ScanForm({
       )}
 
       <div className="mt-4 flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">Enterprise, non-training tier · payloads isolated from model training data.</p>
+        <p className="text-xs text-muted-foreground">
+          Enterprise, non-training tier · payloads isolated from model training
+          data.
+        </p>
         <Button onClick={submit} disabled={submitting} className="glow-primary">
           {submitting ? (
             <>

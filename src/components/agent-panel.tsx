@@ -5,7 +5,13 @@ import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { runAgentTask } from "@/lib/agent.functions";
 import { toast } from "sonner";
-import { Bot, Loader2, GitPullRequest, ExternalLink, AlertCircle } from "lucide-react";
+import {
+  Bot,
+  Loader2,
+  GitPullRequest,
+  ExternalLink,
+  AlertCircle,
+} from "lucide-react";
 
 type Result = {
   prUrl: string | null;
@@ -26,7 +32,9 @@ export function AgentPanel() {
 
   const handleRun = async () => {
     if (!owner.trim() || !repo.trim() || !instruction.trim()) {
-      setError("Please specify repository owner, repository name, and a clear change instruction.");
+      setError(
+        "Please specify repository owner, repository name, and a clear change instruction.",
+      );
       return;
     }
 
@@ -46,12 +54,20 @@ export function AgentPanel() {
 
       setResult(res);
       if (res.prUrl) {
-        toast.success("Pull request successfully created!", { description: res.branchName ?? undefined });
+        toast.success("Pull request successfully created!", {
+          description: res.branchName ?? undefined,
+        });
       } else {
-        toast.info("Agent completed analysis without file changes.", { description: res.summary });
+        toast.info("Agent completed analysis without file changes.", {
+          description: res.summary,
+        });
       }
-    } catch (err: any) {
-      setError(err.message || "An unexpected error occurred during agent execution.");
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : "An unexpected error occurred during agent execution.",
+      );
     } finally {
       setLoading(false);
     }
@@ -61,10 +77,14 @@ export function AgentPanel() {
     <div className="space-y-4 rounded-xl border border-border/60 bg-card/60 p-5 shadow-sm">
       <div className="flex items-center gap-2">
         <Bot className="h-5 w-5 text-primary" />
-        <h3 className="text-base font-semibold">Autonomous Remediation Agent</h3>
+        <h3 className="text-base font-semibold">
+          Autonomous Remediation Agent
+        </h3>
       </div>
       <p className="text-xs leading-relaxed text-muted-foreground">
-        Specify a task in natural language. The agent inspects the repository, applies necessary edits across multiple files, and opens a Pull Request for manual review.
+        Specify a task in natural language. The agent inspects the repository,
+        applies necessary edits across multiple files, and opens a Pull Request
+        for manual review.
       </p>
 
       <div className="grid grid-cols-2 gap-3">
@@ -124,10 +144,15 @@ export function AgentPanel() {
 
           {result.operations.length > 0 && (
             <div className="space-y-1.5">
-              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">Modified Files</span>
+              <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                Modified Files
+              </span>
               <ul className="space-y-1">
                 {result.operations.map((op) => (
-                  <li key={op.path} className="flex items-center gap-2 font-mono text-[11px]">
+                  <li
+                    key={op.path}
+                    className="flex items-center gap-2 font-mono text-[11px]"
+                  >
                     <span className="rounded bg-primary/10 px-1.5 py-0.5 text-[10px] font-bold text-primary uppercase">
                       {op.action}
                     </span>

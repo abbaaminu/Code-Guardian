@@ -21,7 +21,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 
 async function serverSupabase() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } =
+    await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
 }
 
@@ -62,7 +63,12 @@ export const saveRepoToken = createServerFn({ method: "POST" })
 export const deleteRepoToken = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) =>
-    z.object({ provider: z.enum(["github", "gitlab"]), label: z.string().default("default") }).parse(input),
+    z
+      .object({
+        provider: z.enum(["github", "gitlab"]),
+        label: z.string().default("default"),
+      })
+      .parse(input),
   )
   .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
@@ -93,7 +99,10 @@ export const listRepoTokenLabels = createServerFn({ method: "GET" })
 // Call this from other server-side code (e.g. a future repo-fetch job) that
 // needs the plaintext token for exactly as long as it takes to make one API
 // call. Do not cache the return value beyond that.
-export async function getDecryptedRepoToken(
+//
+// M7: named `...ServerOnly` so it can't be mistaken for a client-callable
+// function and so accidental imports from client code stand out in review.
+export async function getDecryptedRepoTokenServerOnly(
   userId: string,
   provider: "github" | "gitlab",
   label = "default",
@@ -109,5 +118,9 @@ export async function getDecryptedRepoToken(
     .maybeSingle();
   if (error) throw new Error(error.message);
   if (!data) return null;
-  return decryptSecret({ ciphertext: data.encrypted_token, iv: data.iv, authTag: data.auth_tag });
+  return decryptSecret({
+    ciphertext: data.encrypted_token,
+    iv: data.iv,
+    authTag: data.auth_tag,
+  });
 }

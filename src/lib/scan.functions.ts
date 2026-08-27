@@ -4,6 +4,7 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { runLocalSAST } from "@/lib/sast-engine";
 import { buildSarifLog } from "@/lib/sarif";
+import { geminiApiRateLimiter } from "@/lib/rate-limiter";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -28,8 +29,23 @@ interface VulnRaw {
 }
 
 async function serverSupabase() {
-  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { supabaseAdmin } =
+    await import("@/integrations/supabase/client.server");
   return supabaseAdmin;
+}
+
+// M9: Postgres/Supabase cap single INSERT statements, and oversized multi-row
+// inserts risk hitting request-size limits plus fail wholesale if one row is
+// bad. Insert findings in bounded chunks so a large scan stays within limits
+// and a bad row fails alone instead of aborting the whole batch.
+const INSERT_CHUNK_SIZE = 100;
+
+function chunkRows<T>(rows: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) {
+    chunks.push(rows.slice(i, i + size));
+  }
+  return chunks;
 }
 
 function safeString(v: unknown, max = 4000): string {
@@ -96,14 +112,29 @@ function countBySeverity(vulns: Array<{ severity: Severity }>) {
   return counts;
 }
 
-function computeHealthScore(counts: { critical: number; high: number; medium: number; low: number }) {
-  const penalty = counts.critical * 25 + counts.high * 12 + counts.medium * 5 + counts.low * 2;
+function computeHealthScore(counts: {
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+}) {
+  const penalty =
+    counts.critical * 25 +
+    counts.high * 12 +
+    counts.medium * 5 +
+    counts.low * 2;
   return Math.max(0, Math.min(100, 100 - penalty));
 }
 
-async function callGemini(project: string, fileType: string, code: string, policies: string[]): Promise<unknown[]> {
+async function callGemini(
+  project: string,
+  fileType: string,
+  code: string,
+  policies: string[],
+): Promise<unknown[]> {
   const apiKey = process.env.GOOGLE_API_KEY;
-  if (!apiKey) throw new Error("Security audit AI engine is temporarily unconfigured.");
+  if (!apiKey)
+    throw new Error("Security audit AI engine is temporarily unconfigured.");
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const systemPrompt = `You are SecurePulse, an enterprise, non-training-tier code security auditor.
@@ -140,14 +171,17 @@ ${code}
 
   if (!res.ok) {
     const body = await res.text();
-    if (res.status === 429) throw new Error("Rate limit hit — please retry in a moment.");
+    if (res.status === 429)
+      throw new Error("Rate limit hit — please retry in a moment.");
     throw new Error(`Gemini API error [${res.status}]: ${body.slice(0, 300)}`);
   }
 
   const data = (await res.json()) as {
     candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
   };
-  const content = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "{}";
+  const content =
+    data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ??
+    "{}";
   try {
     const parsed = JSON.parse(content) as { vulnerabilities?: unknown };
     return Array.isArray(parsed.vulnerabilities) ? parsed.vulnerabilities : [];
@@ -160,10 +194,22 @@ export const runScan = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) => ScanInput.parse(input))
   .handler(async ({ data, context }) => {
+    // H4: per-user rate limit before any work starts (this endpoint burns
+    // Gemini quota). Checked first so over-budget users don't even create a
+    // scan row that will only fail later.
+    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+      throw new Error(
+        "Rate limit reached — please wait a moment before running another AI-powered scan.",
+      );
+    }
+
     const supabase = await serverSupabase();
 
     // Load enabled policies to steer the scan.
-    const { data: policyRows } = await supabase.from("policies").select("name").eq("enabled", true);
+    const { data: policyRows } = await supabase
+      .from("policies")
+      .select("name")
+      .eq("enabled", true);
     const policies = (policyRows ?? []).map((p) => p.name);
 
     // Create scan in scanning state, tagged to the signed-in user.
@@ -178,17 +224,26 @@ export const runScan = createServerFn({ method: "POST" })
       })
       .select("id")
       .single();
-    if (createErr || !created) throw new Error(createErr?.message || "Failed to create scan");
+    if (createErr || !created)
+      throw new Error(createErr?.message || "Failed to create scan");
 
     try {
       // 1. Deterministic local engine first: real AST + taint analysis for
       // JS/TS/JSX/TSX, heuristic pattern rules for everything else. Zero
       // latency, zero API cost, and it still runs if the AI engine is down.
-      const localFindings = normalizeLocalFindings(runLocalSAST(data.source_code, data.file_type), data.project_name);
+      const localFindings = normalizeLocalFindings(
+        runLocalSAST(data.source_code, data.file_type),
+        data.project_name,
+      );
 
       // 2. AI engine for complex, contextual, business-logic vulnerabilities
       // that structural analysis alone can't reason about.
-      const rawAiFindings = await callGemini(data.project_name, data.file_type, data.source_code, policies);
+      const rawAiFindings = await callGemini(
+        data.project_name,
+        data.file_type,
+        data.source_code,
+        policies,
+      );
       const aiVulns = normalizeVulns(rawAiFindings);
 
       const vulns = [...localFindings, ...aiVulns];
@@ -197,8 +252,12 @@ export const runScan = createServerFn({ method: "POST" })
 
       if (vulns.length > 0) {
         const rows = vulns.map((v) => ({ ...v, scan_id: created.id }));
-        const { error: insertErr } = await supabase.from("vulnerabilities").insert(rows);
-        if (insertErr) throw new Error(insertErr.message);
+        for (const chunk of chunkRows(rows, INSERT_CHUNK_SIZE)) {
+          const { error: insertErr } = await supabase
+            .from("vulnerabilities")
+            .insert(chunk);
+          if (insertErr) throw new Error(insertErr.message);
+        }
       }
 
       await supabase
@@ -212,7 +271,10 @@ export const runScan = createServerFn({ method: "POST" })
 
       return { id: created.id, health_score: health, counts };
     } catch (err) {
-      await supabase.from("scans").update({ status: "failed" }).eq("id", created.id);
+      await supabase
+        .from("scans")
+        .update({ status: "failed" })
+        .eq("id", created.id);
       throw err;
     }
   });
@@ -223,7 +285,9 @@ export const listScans = createServerFn({ method: "GET" })
     const supabase = await serverSupabase();
     const { data, error } = await supabase
       .from("scans")
-      .select("id, project_name, file_type, status, health_score, vulnerabilities_count, created_at")
+      .select(
+        "id, project_name, file_type, status, health_score, vulnerabilities_count, created_at",
+      )
       .eq("user_id", context.userId)
       .order("created_at", { ascending: false })
       .limit(50);
@@ -233,13 +297,25 @@ export const listScans = createServerFn({ method: "GET" })
 
 export const getScanReport = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
-    const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
-      supabase.from("scans").select("*").eq("id", data.id).eq("user_id", context.userId).maybeSingle(),
-      supabase.from("vulnerabilities").select("*").eq("scan_id", data.id).order("severity"),
-    ]);
+    const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] =
+      await Promise.all([
+        supabase
+          .from("scans")
+          .select("*")
+          .eq("id", data.id)
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+        supabase
+          .from("vulnerabilities")
+          .select("*")
+          .eq("scan_id", data.id)
+          .order("severity"),
+      ]);
     if (e1) throw new Error(e1.message);
     if (e2) throw new Error(e2.message);
     if (!scan) throw new Error("Scan not found");
@@ -253,13 +329,21 @@ export const getScanReport = createServerFn({ method: "GET" })
 // another user's findings just because they knew a scan id.
 export const getScanSarif = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => z.object({ id: z.string().uuid() }).parse(input))
+  .inputValidator((input: unknown) =>
+    z.object({ id: z.string().uuid() }).parse(input),
+  )
   .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
-    const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] = await Promise.all([
-      supabase.from("scans").select("id, project_name").eq("id", data.id).eq("user_id", context.userId).maybeSingle(),
-      supabase.from("vulnerabilities").select("*").eq("scan_id", data.id),
-    ]);
+    const [{ data: scan, error: e1 }, { data: vulns, error: e2 }] =
+      await Promise.all([
+        supabase
+          .from("scans")
+          .select("id, project_name")
+          .eq("id", data.id)
+          .eq("user_id", context.userId)
+          .maybeSingle(),
+        supabase.from("vulnerabilities").select("*").eq("scan_id", data.id),
+      ]);
     if (e1) throw new Error(e1.message);
     if (e2) throw new Error(e2.message);
     if (!scan) throw new Error("Scan not found");
@@ -281,16 +365,18 @@ export const getScanSarif = createServerFn({ method: "GET" })
     });
   });
 
-export const listPolicies = createServerFn({ method: "GET" }).handler(async () => {
-  const supabase = await serverSupabase();
-  const { data, error } = await supabase
-    .from("policies")
-    .select("*")
-    .order("category")
-    .order("name");
-  if (error) throw new Error(error.message);
-  return data ?? [];
-});
+export const listPolicies = createServerFn({ method: "GET" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .handler(async () => {
+    const supabase = await serverSupabase();
+    const { data, error } = await supabase
+      .from("policies")
+      .select("*")
+      .order("category")
+      .order("name");
+    if (error) throw new Error(error.message);
+    return data ?? [];
+  });
 
 const CopilotInput = z.object({
   instruction: z.string().min(1).max(2000),
@@ -299,14 +385,19 @@ const CopilotInput = z.object({
 });
 
 // SECURITY FIX: this endpoint proxies to the Gemini API using the server's own
-// API key. It previously had no auth middleware at all, so anyone who found the
-// URL could burn your Gemini quota/budget for free with no rate limiting tied
-// to an account. Requiring a signed-in Supabase user is the minimum bar here;
-// consider adding per-user rate limiting on top if abuse becomes a problem.
+// API key. It requires a signed-in Supabase user (below), and every call is
+// additionally per-user rate limited (H4) so one account can't burn the shared
+// Gemini quota/budget.
 export const copilotRemediate = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) => CopilotInput.parse(input))
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
+    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+      throw new Error(
+        "Rate limit reached — please wait a moment before asking the copilot again.",
+      );
+    }
+
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) throw new Error("Missing GOOGLE_API_KEY");
 
@@ -334,45 +425,95 @@ ${data.source_code}
       body: JSON.stringify({
         systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
         contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: { responseMimeType: "application/json", temperature: 0.2 },
+        generationConfig: {
+          responseMimeType: "application/json",
+          temperature: 0.2,
+        },
       }),
     });
     if (!res.ok) {
       const body = await res.text();
-      if (res.status === 429) throw new Error("Rate limit hit — please retry in a moment.");
-      throw new Error(`Copilot API error [${res.status}]: ${body.slice(0, 300)}`);
+      if (res.status === 429)
+        throw new Error("Rate limit hit — please retry in a moment.");
+      throw new Error(
+        `Copilot API error [${res.status}]: ${body.slice(0, 300)}`,
+      );
     }
     const payload = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
-    const content = payload.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ?? "{}";
+    const content =
+      payload.candidates?.[0]?.content?.parts
+        ?.map((p) => p.text ?? "")
+        .join("") ?? "{}";
     try {
-      const parsed = JSON.parse(content) as { updated_code?: unknown; summary?: unknown; changes?: unknown };
+      const parsed = JSON.parse(content) as {
+        updated_code?: unknown;
+        summary?: unknown;
+        changes?: unknown;
+      };
       return {
-        updated_code: typeof parsed.updated_code === "string" ? parsed.updated_code : data.source_code,
-        summary: typeof parsed.summary === "string" ? parsed.summary.slice(0, 500) : "Updated code generated.",
+        updated_code:
+          typeof parsed.updated_code === "string"
+            ? parsed.updated_code
+            : data.source_code,
+        summary:
+          typeof parsed.summary === "string"
+            ? parsed.summary.slice(0, 500)
+            : "Updated code generated.",
         changes: Array.isArray(parsed.changes)
-          ? parsed.changes.filter((c): c is string => typeof c === "string").slice(0, 8)
+          ? parsed.changes
+              .filter((c): c is string => typeof c === "string")
+              .slice(0, 8)
           : [],
       };
     } catch {
-      return { updated_code: data.source_code, summary: "Copilot returned no parseable changes.", changes: [] };
+      return {
+        updated_code: data.source_code,
+        summary: "Copilot returned no parseable changes.",
+        changes: [],
+      };
     }
   });
 
-// SECURITY FIX: previously had no auth middleware — any anonymous visitor could
-// toggle any org's enabled security policies. Now requires a signed-in user.
-// NOTE: there's no roles/permissions table in the current schema, so this still
-// doesn't distinguish "signed in" from "should be allowed to change policy for
-// this org." Once multi-tenancy/RBAC exists (see supabase/migrations), gate this
-// on an admin/owner role rather than just authentication.
+// SECURITY FIX (H5): togglePolicy requires BOTH a signed-in user (middleware)
+// AND the `admin` role in the user_roles table (see
+// supabase/migrations/0002_policy_admin_roles.sql). Previously any signed-in
+// user — or before the batch-1 fix, anyone at all — could flip an org's
+// enabled security policies. Role is resolved server-side per request, so a
+// stale or forged client claim can't bypass it.
+//
+// To grant admin (run in the Supabase SQL editor after applying the migration):
+//   insert into public.user_roles (user_id, role)
+//   values ('<auth-user-uuid>', 'admin');
+async function requireAdminRole(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+): Promise<void> {
+  const { data, error } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (data?.role !== "admin") {
+    throw new Error(
+      "Forbidden: only users with the admin role can change security policies.",
+    );
+  }
+}
+
 export const togglePolicy = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .inputValidator((input: unknown) =>
     z.object({ id: z.string().uuid(), enabled: z.boolean() }).parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
+    await requireAdminRole(supabase, context.userId);
+
     const { error } = await supabase
       .from("policies")
       .update({ enabled: data.enabled })

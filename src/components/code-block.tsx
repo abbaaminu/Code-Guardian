@@ -32,7 +32,9 @@ export function CodeBlock({
                 hl && "bg-critical/15 border-l-2 border-critical",
               )}
             >
-              <span className="select-none px-3 py-0.5 text-right text-muted-foreground/60">{n}</span>
+              <span className="select-none px-3 py-0.5 text-right text-muted-foreground/60">
+                {n}
+              </span>
               <span className="whitespace-pre py-0.5 pr-4">{ln || " "}</span>
             </div>
           );

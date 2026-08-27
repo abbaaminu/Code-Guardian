@@ -13,7 +13,7 @@ import {
   Legend,
 } from "recharts";
 import { TrendingUp, Layers } from "lucide-react";
-import type { Severity } from "@/lib/severity";
+import { SEVERITIES, type Severity } from "@/lib/severity";
 
 interface ScanRow {
   id: string;
@@ -32,6 +32,10 @@ const SEV_COLORS: Record<Severity, string> = {
   low: "var(--low)",
 };
 
+// L10: static severity orderings hoisted out of the render path. The stacked
+// Area chart order matters for layering, so it's its own constant.
+const TREND_SEVERITIES: Severity[] = ["low", "medium", "high", "critical"];
+
 function totalVulns(c: Record<Severity, number> | undefined) {
   if (!c) return 0;
   return (c.critical ?? 0) + (c.high ?? 0) + (c.medium ?? 0) + (c.low ?? 0);
@@ -49,14 +53,25 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
       const key = d.toISOString().slice(0, 10);
       days.push({
         key,
-        label: d.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+        label: d.toLocaleDateString(undefined, {
+          month: "short",
+          day: "numeric",
+        }),
         date: d,
       });
     }
-    const byDay: Record<string, { critical: number; high: number; medium: number; low: number }> = {};
+    const byDay: Record<
+      string,
+      { critical: number; high: number; medium: number; low: number }
+    > = {};
     for (const s of scans) {
       const key = new Date(s.created_at).toISOString().slice(0, 10);
-      const bucket = (byDay[key] ??= { critical: 0, high: 0, medium: 0, low: 0 });
+      const bucket = (byDay[key] ??= {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+      });
       bucket.critical += s.vulnerabilities_count?.critical ?? 0;
       bucket.high += s.vulnerabilities_count?.high ?? 0;
       bucket.medium += s.vulnerabilities_count?.medium ?? 0;
@@ -69,22 +84,37 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
   }, [scans]);
 
   const byLanguage = useMemo(() => {
-    const map: Record<string, { critical: number; high: number; medium: number; low: number }> = {};
+    const map: Record<
+      string,
+      { critical: number; high: number; medium: number; low: number }
+    > = {};
     for (const s of scans) {
       const lang = s.file_type || "Unknown";
-      const bucket = (map[lang] ??= { critical: 0, high: 0, medium: 0, low: 0 });
+      const bucket = (map[lang] ??= {
+        critical: 0,
+        high: 0,
+        medium: 0,
+        low: 0,
+      });
       bucket.critical += s.vulnerabilities_count?.critical ?? 0;
       bucket.high += s.vulnerabilities_count?.high ?? 0;
       bucket.medium += s.vulnerabilities_count?.medium ?? 0;
       bucket.low += s.vulnerabilities_count?.low ?? 0;
     }
     return Object.entries(map)
-      .map(([language, v]) => ({ language, ...v, total: v.critical + v.high + v.medium + v.low }))
+      .map(([language, v]) => ({
+        language,
+        ...v,
+        total: v.critical + v.high + v.medium + v.low,
+      }))
       .sort((a, b) => b.total - a.total)
       .slice(0, 8);
   }, [scans]);
 
-  const totalFindings = scans.reduce((n, s) => n + totalVulns(s.vulnerabilities_count), 0);
+  const totalFindings = scans.reduce(
+    (n, s) => n + totalVulns(s.vulnerabilities_count),
+    0,
+  );
 
   return (
     <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
@@ -100,22 +130,51 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
             </p>
           </div>
           <div className="text-right">
-            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Total</div>
-            <div className="text-lg font-semibold tabular-nums">{totalFindings}</div>
+            <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Total
+            </div>
+            <div className="text-lg font-semibold tabular-nums">
+              {totalFindings}
+            </div>
           </div>
         </header>
         <div className="h-56">
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={trend} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
+            <AreaChart
+              data={trend}
+              margin={{ top: 4, right: 8, left: -20, bottom: 0 }}
+            >
               <defs>
-                {(["critical", "high", "medium", "low"] as Severity[]).map((s) => (
-                  <linearGradient key={s} id={`grad-${s}`} x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={SEV_COLORS[s]} stopOpacity={0.55} />
-                    <stop offset="100%" stopColor={SEV_COLORS[s]} stopOpacity={0} />
-                  </linearGradient>
-                ))}
+                {(["critical", "high", "medium", "low"] as Severity[]).map(
+                  (s) => (
+                    <linearGradient
+                      key={s}
+                      id={`grad-${s}`}
+                      x1="0"
+                      y1="0"
+                      x2="0"
+                      y2="1"
+                    >
+                      <stop
+                        offset="0%"
+                        stopColor={SEV_COLORS[s]}
+                        stopOpacity={0.55}
+                      />
+                      <stop
+                        offset="100%"
+                        stopColor={SEV_COLORS[s]}
+                        stopOpacity={0}
+                      />
+                    </linearGradient>
+                  ),
+                )}
               </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.35} vertical={false} />
+              <CartesianGrid
+                strokeDasharray="3 3"
+                stroke="var(--border)"
+                strokeOpacity={0.35}
+                vertical={false}
+              />
               <XAxis
                 dataKey="label"
                 tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
@@ -138,7 +197,7 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
                 }}
                 labelStyle={{ color: "var(--muted-foreground)" }}
               />
-              {(["low", "medium", "high", "critical"] as Severity[]).map((s) => (
+              {TREND_SEVERITIES.map((s) => (
                 <Area
                   key={s}
                   type="monotone"
@@ -158,9 +217,13 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
         <header className="mb-4">
           <div className="flex items-center gap-2">
             <Layers className="h-4 w-4 text-primary" />
-            <h3 className="text-sm font-semibold">Vulnerabilities by language</h3>
+            <h3 className="text-sm font-semibold">
+              Vulnerabilities by language
+            </h3>
           </div>
-          <p className="mt-0.5 text-[11px] text-muted-foreground">Where risk concentrates across your stack</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            Where risk concentrates across your stack
+          </p>
         </header>
         {byLanguage.length === 0 ? (
           <div className="flex h-56 items-center justify-center text-xs text-muted-foreground">
@@ -169,9 +232,24 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
         ) : (
           <div className="h-56">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={byLanguage} layout="vertical" margin={{ top: 4, right: 8, left: 8, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" strokeOpacity={0.35} horizontal={false} />
-                <XAxis type="number" tick={{ fill: "var(--muted-foreground)", fontSize: 10 }} axisLine={false} tickLine={false} allowDecimals={false} />
+              <BarChart
+                data={byLanguage}
+                layout="vertical"
+                margin={{ top: 4, right: 8, left: 8, bottom: 0 }}
+              >
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke="var(--border)"
+                  strokeOpacity={0.35}
+                  horizontal={false}
+                />
+                <XAxis
+                  type="number"
+                  tick={{ fill: "var(--muted-foreground)", fontSize: 10 }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                />
                 <YAxis
                   type="category"
                   dataKey="language"
@@ -181,7 +259,9 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
                   width={72}
                 />
                 <Tooltip
-                  cursor={{ fill: "color-mix(in oklch, var(--muted) 30%, transparent)" }}
+                  cursor={{
+                    fill: "color-mix(in oklch, var(--muted) 30%, transparent)",
+                  }}
                   contentStyle={{
                     background: "var(--card)",
                     border: "1px solid var(--border)",
@@ -189,9 +269,18 @@ export function ScanAnalytics({ scans }: { scans: ScanRow[] }) {
                     fontSize: 12,
                   }}
                 />
-                <Legend wrapperStyle={{ fontSize: 10, paddingTop: 4 }} iconSize={8} />
-                {(["critical", "high", "medium", "low"] as Severity[]).map((s) => (
-                  <Bar key={s} dataKey={s} stackId="lang" fill={SEV_COLORS[s]} radius={s === "low" ? [0, 3, 3, 0] : 0} />
+                <Legend
+                  wrapperStyle={{ fontSize: 10, paddingTop: 4 }}
+                  iconSize={8}
+                />
+                {SEVERITIES.map((s) => (
+                  <Bar
+                    key={s}
+                    dataKey={s}
+                    stackId="lang"
+                    fill={SEV_COLORS[s]}
+                    radius={s === "low" ? [0, 3, 3, 0] : 0}
+                  />
                 ))}
               </BarChart>
             </ResponsiveContainer>

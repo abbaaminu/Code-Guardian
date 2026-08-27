@@ -17,7 +17,12 @@ function finding(overrides: Partial<SarifFinding> = {}): SarifFinding {
 
 describe("buildSarifLog", () => {
   it("produces a valid SARIF 2.1.0 envelope", () => {
-    const log = buildSarifLog({ toolVersion: "1.0.0", scanId: "scan-1", projectName: "demo", findings: [finding()] });
+    const log = buildSarifLog({
+      toolVersion: "1.0.0",
+      scanId: "scan-1",
+      projectName: "demo",
+      findings: [finding()],
+    });
     expect(log.version).toBe("2.1.0");
     expect(log.runs).toHaveLength(1);
     expect(log.runs[0].tool.driver.name).toBe("SecurePulse");
@@ -28,7 +33,11 @@ describe("buildSarifLog", () => {
       toolVersion: "1.0.0",
       scanId: "s",
       projectName: "p",
-      findings: [finding({ severity: "critical" }), finding({ severity: "medium" }), finding({ severity: "low" })],
+      findings: [
+        finding({ severity: "critical" }),
+        finding({ severity: "medium" }),
+        finding({ severity: "low" }),
+      ],
     });
     const levels = log.runs[0].results.map((r: any) => r.level);
     expect(levels).toEqual(["error", "warning", "note"]);
@@ -46,7 +55,12 @@ describe("buildSarifLog", () => {
   });
 
   it("includes the compliance mapping in rule tags", () => {
-    const log = buildSarifLog({ toolVersion: "1.0.0", scanId: "s", projectName: "p", findings: [finding()] });
+    const log = buildSarifLog({
+      toolVersion: "1.0.0",
+      scanId: "s",
+      projectName: "p",
+      findings: [finding()],
+    });
     const rule = log.runs[0].tool.driver.rules[0] as any;
     expect(rule.properties.tags).toContain("A03:2021 - Injection");
   });
@@ -58,7 +72,8 @@ describe("buildSarifLog", () => {
       projectName: "p",
       findings: [finding({ line_start: null, line_end: null })],
     });
-    const region = (log.runs[0].results[0] as any).locations[0].physicalLocation.region;
+    const region = (log.runs[0].results[0] as any).locations[0].physicalLocation
+      .region;
     expect(region.startLine).toBeGreaterThanOrEqual(1);
   });
 });

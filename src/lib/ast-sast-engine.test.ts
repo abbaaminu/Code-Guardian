@@ -3,30 +3,47 @@ import { runAstSAST } from "./ast-sast-engine";
 
 describe("runAstSAST — false-positive avoidance (the whole point of moving off regex)", () => {
   it("does not flag eval() mentioned inside a comment", () => {
-    const findings = runAstSAST(`// avoid eval(userInput) like the plague\nconst x = 1;`, "ts");
+    const findings = runAstSAST(
+      `// avoid eval(userInput) like the plague\nconst x = 1;`,
+      "ts",
+    );
     expect(findings).toHaveLength(0);
   });
 
   it("does not flag eval() mentioned inside a string literal", () => {
-    const findings = runAstSAST(`const msg = "never call eval() on untrusted input";`, "ts");
+    const findings = runAstSAST(
+      `const msg = "never call eval() on untrusted input";`,
+      "ts",
+    );
     expect(findings).toHaveLength(0);
   });
 
   it("does not flag a placeholder secret value", () => {
-    const findings = runAstSAST(`const apiKey = "your_api_key_here_1234567890";`, "ts");
+    const findings = runAstSAST(
+      `const apiKey = "your_api_key_here_1234567890";`,
+      "ts",
+    );
     expect(findings.filter((f) => f.cwe_id === "CWE-798")).toHaveLength(0);
   });
 
   it("does not flag a secret read from process.env", () => {
-    const findings = runAstSAST(`const apiKey = process.env.STRIPE_SECRET_KEY;`, "ts");
+    const findings = runAstSAST(
+      `const apiKey = process.env.STRIPE_SECRET_KEY;`,
+      "ts",
+    );
     expect(findings.filter((f) => f.cwe_id === "CWE-798")).toHaveLength(0);
   });
 });
 
 describe("runAstSAST — real detections", () => {
   it("flags a hardcoded secret literal", () => {
-    const findings = runAstSAST(`const apiKey = "sk_live_abcdefghijklmnopqrstuvwx";`, "ts");
-    expect(findings.some((f) => f.cwe_id === "CWE-798" && f.severity === "critical")).toBe(true);
+    const findings = runAstSAST(
+      `const apiKey = "sk_live_abcdefghijklmnopqrstuvwx";`,
+      "ts",
+    );
+    expect(
+      findings.some((f) => f.cwe_id === "CWE-798" && f.severity === "critical"),
+    ).toBe(true);
   });
 
   it("flags dangerouslySetInnerHTML via real JSX-attribute detection", () => {
@@ -76,7 +93,10 @@ describe("runAstSAST — real detections", () => {
   });
 
   it("does not flag a fully static SQL string", () => {
-    const findings = runAstSAST(`db.query("SELECT * FROM users WHERE active = true");`, "ts");
+    const findings = runAstSAST(
+      `db.query("SELECT * FROM users WHERE active = true");`,
+      "ts",
+    );
     expect(findings.some((f) => f.cwe_id === "CWE-89")).toBe(false);
   });
 

@@ -38,20 +38,16 @@ async function requireBearerUser(request: Request): Promise<string> {
     throw new Response("Unauthorized: invalid token", { status: 401 });
   }
 
-  const { createClient } = await import("@supabase/supabase-js");
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_PUBLISHABLE_KEY = process.env.SUPABASE_PUBLISHABLE_KEY;
-  if (!SUPABASE_URL || !SUPABASE_PUBLISHABLE_KEY) {
-    throw new Response("Server misconfigured", { status: 500 });
-  }
-  const supabase = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await supabase.auth.getClaims(token);
-  if (error || !data?.claims?.sub) {
+  // M4/M5: reuse the auth middleware's single shared Supabase client for JWT
+  // verification instead of allocating a fresh client on every request.
+  const { verifySupabaseToken } =
+    await import("@/integrations/supabase/auth-middleware");
+  try {
+    const { userId } = await verifySupabaseToken(token);
+    return userId;
+  } catch {
     throw new Response("Unauthorized: invalid token", { status: 401 });
   }
-  return data.claims.sub as string;
 }
 
 export const Route = createFileRoute("/api/scan/instant")({
@@ -69,17 +65,22 @@ export const Route = createFileRoute("/api/scan/instant")({
         try {
           parsed = InstantScanInput.parse(await request.json());
         } catch {
-          return new Response(JSON.stringify({ error: "Invalid request body" }), {
-            status: 400,
-            headers: { "content-type": "application/json" },
-          });
+          return new Response(
+            JSON.stringify({ error: "Invalid request body" }),
+            {
+              status: 400,
+              headers: { "content-type": "application/json" },
+            },
+          );
         }
 
         const findings = runLocalSAST(parsed.source_code, parsed.file_type);
         return new Response(
           JSON.stringify({
             findings,
-            engine: findings.some((f) => f.engine === "ast") ? "ast" : "heuristic",
+            engine: findings.some((f) => f.engine === "ast")
+              ? "ast"
+              : "heuristic",
           }),
           { headers: { "content-type": "application/json" } },
         );

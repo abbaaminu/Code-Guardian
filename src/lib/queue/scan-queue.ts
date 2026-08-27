@@ -83,7 +83,9 @@ export async function enqueueScanJob(job: ScanJob): Promise<{ jobId: string }> {
   //   });
   //   return { jobId: bullJob.id! };
 
-  throw new Error("Queue scaffold present but not yet wired to BullMQ — see scan-queue.ts.");
+  throw new Error(
+    "Queue scaffold present but not yet wired to BullMQ — see scan-queue.ts.",
+  );
 }
 
 // Worker skeleton — this belongs in a separate long-running process, not in a

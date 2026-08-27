@@ -4,7 +4,12 @@ import { AppSidebar } from "./app-sidebar";
 import { Separator } from "@/components/ui/separator";
 import { SignOutButton } from "@/components/require-auth";
 
-export function AppShell({ title, subtitle, actions, children }: {
+export function AppShell({
+  title,
+  subtitle,
+  actions,
+  children,
+}: {
   title: string;
   subtitle?: string;
   actions?: ReactNode;
@@ -19,9 +24,13 @@ export function AppShell({ title, subtitle, actions, children }: {
             <SidebarTrigger />
             <Separator orientation="vertical" className="h-5" />
             <div className="flex flex-1 items-baseline gap-3 min-w-0">
-              <h1 className="truncate text-sm font-semibold tracking-tight">{title}</h1>
+              <h1 className="truncate text-sm font-semibold tracking-tight">
+                {title}
+              </h1>
               {subtitle && (
-                <span className="truncate text-xs text-muted-foreground">{subtitle}</span>
+                <span className="truncate text-xs text-muted-foreground">
+                  {subtitle}
+                </span>
               )}
             </div>
             <div className="flex items-center gap-2">

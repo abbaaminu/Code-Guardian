@@ -15,8 +15,14 @@ interface Line {
 const SCRIPT: Array<{ tone: Tone; text: string }> = [
   { tone: "info", text: "initializing securepulse core engine..." },
   { tone: "info", text: "running AST analysis on file tree..." },
-  { tone: "warn", text: "[WARNING] potential secret token detected on line 14." },
-  { tone: "danger", text: "[DANGER] unvalidated input detected - potential SQL Injection vulnerability found." },
+  {
+    tone: "warn",
+    text: "[WARNING] potential secret token detected on line 14.",
+  },
+  {
+    tone: "danger",
+    text: "[DANGER] unvalidated input detected - potential SQL Injection vulnerability found.",
+  },
   { tone: "info", text: "comparing findings against OWASP Top 10 policies..." },
   { tone: "info", text: "compiling remediation recommendations..." },
   { tone: "success", text: "scan complete. health score generated: 57/100." },
@@ -80,7 +86,10 @@ export function ScanSimulator({
         scriptIdx.current < SCRIPT.length
           ? SCRIPT[scriptIdx.current++]
           : FILLERS[fillerIdx.current++ % FILLERS.length];
-      setLines((prev) => [...prev, { id: idRef.current++, tone: next.tone, text: next.text }]);
+      setLines((prev) => [
+        ...prev,
+        { id: idRef.current++, tone: next.tone, text: next.text },
+      ]);
     }, 300);
     return () => clearInterval(interval);
   }, [running, completed, failed]);
@@ -118,12 +127,19 @@ export function ScanSimulator({
     if (!failed) return;
     setLines((prev) => [
       ...prev,
-      { id: idRef.current++, tone: "danger", text: "[ERROR] pipeline halted. see details above." },
+      {
+        id: idRef.current++,
+        tone: "danger",
+        text: "[ERROR] pipeline halted. see details above.",
+      },
     ]);
   }, [failed]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+    scrollRef.current?.scrollTo({
+      top: scrollRef.current.scrollHeight,
+      behavior: "smooth",
+    });
   }, [lines]);
 
   const pct = Math.round(progress);
@@ -179,7 +195,11 @@ export function ScanSimulator({
         {lines.map((l) => (
           <div key={l.id} className="flex gap-2 animate-fade-in">
             <span className="shrink-0 text-[#00ff88]/40">$</span>
-            <span className={cn("whitespace-pre-wrap break-words", toneCls[l.tone])}>{l.text}</span>
+            <span
+              className={cn("whitespace-pre-wrap break-words", toneCls[l.tone])}
+            >
+              {l.text}
+            </span>
           </div>
         ))}
         {running && !completed && !failed && (
@@ -194,7 +214,11 @@ export function ScanSimulator({
       <div className="relative border-t border-[#00ff88]/20 bg-black/70 px-4 py-3 font-mono">
         <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-widest">
           <span className="text-[#00ff88]/70">
-            {completed ? "audit sealed" : failed ? "pipeline error" : "scanning pipeline"}
+            {completed
+              ? "audit sealed"
+              : failed
+                ? "pipeline error"
+                : "scanning pipeline"}
           </span>
           <span className="tabular-nums text-[#00ff88]">{pct}%</span>
         </div>
@@ -202,7 +226,9 @@ export function ScanSimulator({
           <div
             className={cn(
               "h-full rounded-full transition-[width] duration-300 ease-out",
-              failed ? "bg-[#ff5566]" : "bg-gradient-to-r from-[#00ff88] to-[#7dff9a]",
+              failed
+                ? "bg-[#ff5566]"
+                : "bg-gradient-to-r from-[#00ff88] to-[#7dff9a]",
             )}
             style={{
               width: `${pct}%`,
@@ -219,7 +245,9 @@ export function ScanSimulator({
 
         {completed && scanId && (
           <div className="mt-4 flex flex-col items-center gap-3 rounded-lg border border-[#00ff88]/40 bg-[#00ff88]/5 p-4 text-center animate-fade-in">
-            <div className="text-lg font-semibold text-[#7dff9a]">Scan Completed!</div>
+            <div className="text-lg font-semibold text-[#7dff9a]">
+              Scan Completed!
+            </div>
             <div className="text-[11px] uppercase tracking-widest text-[#00ff88]/60">
               audit report ready · findings sealed
             </div>
@@ -249,7 +277,8 @@ export function ScanSimulator({
         {failed && (
           <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-[#ff5566]/40 bg-[#ff5566]/5 p-3 text-[#ff5566] animate-fade-in">
             <div className="flex items-center gap-2 text-sm">
-              <XCircle className="h-4 w-4" /> scan failed. adjust the input and retry.
+              <XCircle className="h-4 w-4" /> scan failed. adjust the input and
+              retry.
             </div>
             <Button
               variant="ghost"

@@ -9,7 +9,9 @@ import { test, expect } from "@playwright/test";
 // this at prod).
 
 test.describe("unauthenticated", () => {
-  test("landing page loads and shows a sign-in entry point", async ({ page }) => {
+  test("landing page loads and shows a sign-in entry point", async ({
+    page,
+  }) => {
     await page.goto("/");
     await expect(page).toHaveTitle(/SecurePulse/i);
   });
@@ -35,7 +37,9 @@ test.describe("authenticated", () => {
     await expect(page).toHaveURL(/dashboard/);
   });
 
-  test("running a scan on a small snippet reaches a completed report", async ({ page }) => {
+  test("running a scan on a small snippet reaches a completed report", async ({
+    page,
+  }) => {
     // TODO: once signed in, paste a small snippet with a known finding
     // (e.g. a hardcoded secret) and assert the scan reaches "completed"
     // and the report page shows at least one finding.

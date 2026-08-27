@@ -32,7 +32,9 @@ const SEVERITY_EMOJI: Record<InlineFinding["severity"], string> = {
 // Parses a unified diff (as returned by GitHub's `.diff` media type or the
 // compare API) into, per file, a map of new-file line number -> diff "position"
 // (the value the Review Comments API requires instead of a raw line number).
-export function buildPositionMap(unifiedDiff: string): Map<string, Map<number, number>> {
+export function buildPositionMap(
+  unifiedDiff: string,
+): Map<string, Map<number, number>> {
   const byFile = new Map<string, Map<number, number>>();
   let currentFile: string | null = null;
   let position = -1; // position is 0-indexed *within a file's hunks*, resets per file
@@ -75,7 +77,9 @@ export function buildPositionMap(unifiedDiff: string): Map<string, Map<number, n
 }
 
 export function formatFindingBody(f: InlineFinding): string {
-  const cwe = f.cweId ? ` · [${f.cweId}](https://cwe.mitre.org/data/definitions/${f.cweId.replace(/^CWE-?/i, "")}.html)` : "";
+  const cwe = f.cweId
+    ? ` · [${f.cweId}](https://cwe.mitre.org/data/definitions/${f.cweId.replace(/^CWE-?/i, "")}.html)`
+    : "";
   return `${SEVERITY_EMOJI[f.severity]} **${f.title}**${cwe}\n\n${f.remediation}\n\n<sub>Posted by SecurePulse</sub>`;
 }
 
@@ -91,7 +95,15 @@ export async function postReviewComments(params: {
   findings: InlineFinding[];
   positionMap: Map<string, Map<number, number>>;
 }): Promise<{ posted: number; skipped: number }> {
-  const { installationToken, owner, repo, pullNumber, commitSha, findings, positionMap } = params;
+  const {
+    installationToken,
+    owner,
+    repo,
+    pullNumber,
+    commitSha,
+    findings,
+    positionMap,
+  } = params;
 
   const comments: Array<{ path: string; position: number; body: string }> = [];
   let skipped = 0;
@@ -109,24 +121,29 @@ export async function postReviewComments(params: {
     return { posted: 0, skipped };
   }
 
-  const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${installationToken}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${installationToken}`,
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+      },
+      body: JSON.stringify({
+        commit_id: commitSha,
+        event: "COMMENT",
+        body: `SecurePulse found ${findings.length} issue(s) in this PR (${comments.length} anchored inline, ${skipped} summarized only).`,
+        comments,
+      }),
     },
-    body: JSON.stringify({
-      commit_id: commitSha,
-      event: "COMMENT",
-      body: `SecurePulse found ${findings.length} issue(s) in this PR (${comments.length} anchored inline, ${skipped} summarized only).`,
-      comments,
-    }),
-  });
+  );
 
   if (!res.ok) {
     const body = await res.text();
-    throw new Error(`Failed to post PR review [${res.status}]: ${body.slice(0, 300)}`);
+    throw new Error(
+      `Failed to post PR review [${res.status}]: ${body.slice(0, 300)}`,
+    );
   }
 
   return { posted: comments.length, skipped };

@@ -18,9 +18,14 @@ import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-function verifySignature(rawBody: string, signatureHeader: string | null, secret: string): boolean {
+function verifySignature(
+  rawBody: string,
+  signatureHeader: string | null,
+  secret: string,
+): boolean {
   if (!signatureHeader || !signatureHeader.startsWith("sha256=")) return false;
-  const expected = "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
+  const expected =
+    "sha256=" + createHmac("sha256", secret).update(rawBody).digest("hex");
   const a = Buffer.from(expected);
   const b = Buffer.from(signatureHeader);
   // Different lengths would throw in timingSafeEqual; treat as a mismatch.
@@ -46,7 +51,9 @@ export const Route = createFileRoute("/api/webhooks/github")({
       POST: async ({ request }) => {
         const secret = process.env.GITHUB_WEBHOOK_SECRET;
         if (!secret) {
-          console.error("[github webhook] GITHUB_WEBHOOK_SECRET is not configured; rejecting all deliveries.");
+          console.error(
+            "[github webhook] GITHUB_WEBHOOK_SECRET is not configured; rejecting all deliveries.",
+          );
           return new Response("Webhook not configured", { status: 503 });
         }
 
@@ -59,7 +66,14 @@ export const Route = createFileRoute("/api/webhooks/github")({
         const event = request.headers.get("x-github-event");
 
         if (event === "pull_request") {
-          const payload = JSON.parse(rawBody) as PullRequestPayload;
+          // M2: GitHub always sends JSON, but a malformed delivery or a probe
+          // hitting the URL directly must not crash the handler — reject it.
+          let payload: PullRequestPayload;
+          try {
+            payload = JSON.parse(rawBody) as PullRequestPayload;
+          } catch {
+            return new Response("Invalid JSON payload", { status: 400 });
+          }
           if (["opened", "synchronize", "reopened"].includes(payload.action)) {
             const installationId = payload.installation?.id;
             if (!installationId) {

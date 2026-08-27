@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { RefreshCw, ShieldOff, FileDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { createRemediationReportPdf } from "@/lib/pdf";
 
 interface Props {
   scanId: string;
@@ -12,7 +13,13 @@ interface Props {
   onRescan?: () => void;
 }
 
-export function WorkspaceActionBar({ scanId, projectName, appliedCount, totalFindings, onRescan }: Props) {
+export function WorkspaceActionBar({
+  scanId,
+  projectName,
+  appliedCount,
+  totalFindings,
+  onRescan,
+}: Props) {
   const [rescanning, setRescanning] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [fpMarked, setFpMarked] = useState(false);
@@ -22,37 +29,48 @@ export function WorkspaceActionBar({ scanId, projectName, appliedCount, totalFin
     toast.loading("Re-running scan…", { id: "rescan" });
     await new Promise((r) => setTimeout(r, 1400));
     setRescanning(false);
-    toast.success("Scan refreshed", { id: "rescan", description: "No new findings detected." });
+    toast.success("Scan refreshed", {
+      id: "rescan",
+      description: "No new findings detected.",
+    });
     onRescan?.();
   };
 
   const handleFalsePositive = () => {
     setFpMarked(true);
-    toast.success("Marked as false positive", { description: "Finding excluded from future scans." });
+    toast.success("Marked as false positive", {
+      description: "Finding excluded from future scans.",
+    });
     setTimeout(() => setFpMarked(false), 2000);
   };
 
   const handleDownload = async () => {
     setDownloading(true);
-    await new Promise((r) => setTimeout(r, 900));
-    const content = `SecurePulse Remediation Report
-Project: ${projectName}
-Scan: ${scanId}
-Generated: ${new Date().toISOString()}
-
-Findings: ${totalFindings}
-Patches applied: ${appliedCount}
-
-This document summarizes AI-suggested remediations for identified vulnerabilities.`;
-    const blob = new Blob([content], { type: "application/pdf" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `remediation-${scanId.slice(0, 8)}.pdf`;
-    a.click();
-    URL.revokeObjectURL(url);
-    setDownloading(false);
-    toast.success("Remediation PDF downloaded");
+    await new Promise((r) => setTimeout(r, 400));
+    try {
+      // H6: previous code created a text blob mislabeled as application/pdf —
+      // a .pdf file no reader could open. createRemediationReportPdf builds a
+      // real, spec-valid PDF (see src/lib/pdf.ts).
+      const blob = createRemediationReportPdf({
+        projectName,
+        scanId,
+        totalFindings,
+        appliedCount,
+        generatedAt: new Date().toISOString(),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `remediation-${scanId.slice(0, 8)}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+      toast.success("Remediation PDF downloaded");
+    } catch (err) {
+      console.error("Failed to generate remediation PDF:", err);
+      toast.error("Could not generate the PDF report.");
+    } finally {
+      setDownloading(false);
+    }
   };
 
   return (
@@ -75,7 +93,11 @@ This document summarizes AI-suggested remediations for identified vulnerabilitie
           disabled={rescanning}
           className="gap-1.5 rounded-full"
         >
-          {rescanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          {rescanning ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <RefreshCw className="h-3.5 w-3.5" />
+          )}
           <span className="hidden sm:inline">Re-run Scan</span>
         </Button>
 
@@ -86,7 +108,9 @@ This document summarizes AI-suggested remediations for identified vulnerabilitie
           className={cn("gap-1.5 rounded-full", fpMarked && "text-low")}
         >
           <ShieldOff className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">{fpMarked ? "Marked" : "False Positive"}</span>
+          <span className="hidden sm:inline">
+            {fpMarked ? "Marked" : "False Positive"}
+          </span>
         </Button>
 
         <Button
@@ -95,8 +119,14 @@ This document summarizes AI-suggested remediations for identified vulnerabilitie
           disabled={downloading}
           className="gap-1.5 rounded-full bg-primary text-primary-foreground hover:opacity-90"
         >
-          {downloading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-          <span className="hidden sm:inline">{downloading ? "Preparing…" : "Remediation PDF"}</span>
+          {downloading ? (
+            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          ) : (
+            <FileDown className="h-3.5 w-3.5" />
+          )}
+          <span className="hidden sm:inline">
+            {downloading ? "Preparing…" : "Remediation PDF"}
+          </span>
         </Button>
       </div>
     </div>

@@ -61,7 +61,7 @@
   --popover: oklch(0.19 0.025 250);
   --popover-foreground: oklch(0.96 0.01 240);
 
-  --primary: oklch(0.78 0.19 165);           /* neon-mint */
+  --primary: oklch(0.78 0.19 165); /* neon-mint */
   --primary-foreground: oklch(0.14 0.02 250);
 
   --secondary: oklch(0.24 0.03 250);
@@ -100,31 +100,56 @@
 }
 
 @layer base {
-  * { border-color: var(--color-border); }
-  html, body { background-color: var(--color-background); color: var(--color-foreground); }
-  body { font-feature-settings: "cv02", "cv03", "cv04", "cv11"; }
+  * {
+    border-color: var(--color-border);
+  }
+  html,
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+  body {
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  }
 }
 
 @utility glow-primary {
-  box-shadow: 0 0 0 1px color-mix(in oklch, var(--primary) 40%, transparent),
-              0 0 30px -8px color-mix(in oklch, var(--primary) 55%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in oklch, var(--primary) 40%, transparent),
+    0 0 30px -8px color-mix(in oklch, var(--primary) 55%, transparent);
 }
 
 @utility grid-bg {
   background-image:
-    linear-gradient(color-mix(in oklch, var(--primary) 8%, transparent) 1px, transparent 1px),
-    linear-gradient(90deg, color-mix(in oklch, var(--primary) 8%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      color-mix(in oklch, var(--primary) 8%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--primary) 8%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 32px 32px;
 }
 
 @keyframes scan-shimmer {
-  0% { transform: translateX(-100%); }
-  100% { transform: translateX(400%); }
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
 }
 
 @media print {
-  body * { visibility: hidden !important; }
-  #printable-report, #printable-report * { visibility: visible !important; }
+  body * {
+    visibility: hidden !important;
+  }
+  #printable-report,
+  #printable-report * {
+    visibility: visible !important;
+  }
   #printable-report {
     position: fixed !important;
     inset: 0 !important;
@@ -135,4 +160,3 @@
     color: black !important;
   }
 }
-

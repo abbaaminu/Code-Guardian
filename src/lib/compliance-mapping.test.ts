@@ -11,8 +11,18 @@ describe("mapCwe", () => {
   });
 
   it("returns an unmapped record for unknown/null CWEs instead of throwing", () => {
-    expect(mapCwe(null)).toEqual({ owasp: null, cweTop25Rank: null, pciDss: [], soc2: [] });
-    expect(mapCwe("CWE-999999")).toEqual({ owasp: null, cweTop25Rank: null, pciDss: [], soc2: [] });
+    expect(mapCwe(null)).toEqual({
+      owasp: null,
+      cweTop25Rank: null,
+      pciDss: [],
+      soc2: [],
+    });
+    expect(mapCwe("CWE-999999")).toEqual({
+      owasp: null,
+      cweTop25Rank: null,
+      pciDss: [],
+      soc2: [],
+    });
   });
 });
 

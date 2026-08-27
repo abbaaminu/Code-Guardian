@@ -1,9 +1,22 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { Loader2, FileJson, FileCode2, Printer, ShieldCheck, Download } from "lucide-react";
+import {
+  Loader2,
+  FileJson,
+  FileCode2,
+  Printer,
+  ShieldCheck,
+  Download,
+} from "lucide-react";
 import type { Severity } from "@/lib/severity";
 import { getScanReport, getScanSarif } from "@/lib/scan.functions";
 import { summarizeCompliance } from "@/lib/compliance-mapping";
@@ -32,7 +45,8 @@ function total(c: Record<Severity, number> | undefined) {
 
 function verdict(score: number) {
   if (score >= 85) return { label: "Production ready", tone: "text-low" };
-  if (score >= 65) return { label: "Minor remediation advised", tone: "text-medium" };
+  if (score >= 65)
+    return { label: "Minor remediation advised", tone: "text-medium" };
   if (score >= 40) return { label: "Requires remediation", tone: "text-high" };
   return { label: "Do not deploy", tone: "text-critical" };
 }
@@ -74,7 +88,12 @@ export function ReportExportDialog({
 
   if (!scan) return null;
   const v = verdict(scan.health_score);
-  const counts = scan.vulnerabilities_count ?? { critical: 0, high: 0, medium: 0, low: 0 };
+  const counts = scan.vulnerabilities_count ?? {
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+  };
   const findings = total(counts);
   const vulns = reportQuery.data?.vulns ?? [];
   const compliance = summarizeCompliance(vulns.map((vv) => vv.cwe_id));
@@ -155,24 +174,41 @@ export function ReportExportDialog({
               <ShieldCheck className="h-4 w-4 text-primary" />
               Audit executive summary
             </DialogTitle>
-            <DialogDescription>Printable snapshot of repository integrity and compliance posture.</DialogDescription>
+            <DialogDescription>
+              Printable snapshot of repository integrity and compliance posture.
+            </DialogDescription>
           </DialogHeader>
         </div>
 
-        <div id="printable-report" className="max-h-[65vh] space-y-5 overflow-auto px-6 py-6">
+        <div
+          id="printable-report"
+          className="max-h-[65vh] space-y-5 overflow-auto px-6 py-6"
+        >
           <section className="flex items-start justify-between gap-4">
             <div>
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Project</div>
-              <div className="text-lg font-semibold tracking-tight">{scan.project_name}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Project
+              </div>
+              <div className="text-lg font-semibold tracking-tight">
+                {scan.project_name}
+              </div>
               <div className="mt-0.5 text-xs text-muted-foreground">
                 {scan.file_type} · {new Date(scan.created_at).toLocaleString()}
               </div>
-              <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">Scan ID · {scan.id}</div>
+              <div className="mt-0.5 font-mono text-[10px] text-muted-foreground">
+                Scan ID · {scan.id}
+              </div>
             </div>
             <div className="rounded-lg border border-primary/40 bg-primary/5 px-4 py-3 text-center glow-primary">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Integrity</div>
-              <div className="text-3xl font-bold tabular-nums text-primary">{scan.health_score}</div>
-              <div className={`text-[10px] font-medium ${v.tone}`}>{v.label}</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Integrity
+              </div>
+              <div className="text-3xl font-bold tabular-nums text-primary">
+                {scan.health_score}
+              </div>
+              <div className={`text-[10px] font-medium ${v.tone}`}>
+                {v.label}
+              </div>
             </div>
           </section>
 
@@ -181,69 +217,138 @@ export function ReportExportDialog({
               Findings by severity
             </div>
             <div className="grid grid-cols-4 gap-2">
-              {(["critical", "high", "medium", "low"] as Severity[]).map((s) => (
-                <div key={s} className={`rounded-md border px-3 py-2 ${SEV_TINT[s]}`}>
-                  <div className="text-lg font-bold tabular-nums">{counts[s] ?? 0}</div>
-                  <div className="text-[10px] uppercase tracking-widest opacity-80">{s}</div>
-                </div>
-              ))}
+              {(["critical", "high", "medium", "low"] as Severity[]).map(
+                (s) => (
+                  <div
+                    key={s}
+                    className={`rounded-md border px-3 py-2 ${SEV_TINT[s]}`}
+                  >
+                    <div className="text-lg font-bold tabular-nums">
+                      {counts[s] ?? 0}
+                    </div>
+                    <div className="text-[10px] uppercase tracking-widest opacity-80">
+                      {s}
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
             <div className="mt-2 text-[11px] text-muted-foreground">
-              {findings} total finding{findings === 1 ? "" : "s"} across enforced policy set.
+              {findings} total finding{findings === 1 ? "" : "s"} across
+              enforced policy set.
             </div>
           </section>
 
           <section className="grid gap-3 md:grid-cols-2">
             <div className="rounded-md border border-border/60 bg-muted/20 p-3">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Compliance</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Compliance
+              </div>
               {reportQuery.isLoading ? (
-                <div className="mt-1.5 text-xs text-muted-foreground">Computing from findings…</div>
+                <div className="mt-1.5 text-xs text-muted-foreground">
+                  Computing from findings…
+                </div>
               ) : (
                 <ul className="mt-1.5 space-y-0.5 text-xs">
-                  <li>· OWASP: {compliance.owaspCategories.length ? compliance.owaspCategories.join(", ") : "no mapped categories"}</li>
+                  <li>
+                    · OWASP:{" "}
+                    {compliance.owaspCategories.length
+                      ? compliance.owaspCategories.join(", ")
+                      : "no mapped categories"}
+                  </li>
                   <li>· CWE Top 25 hits: {compliance.cweTop25Hits}</li>
-                  <li>· PCI-DSS: {compliance.pciDssRequirements.length ? compliance.pciDssRequirements.join(", ") : "none triggered"}</li>
-                  <li>· SOC 2: {compliance.soc2Criteria.length ? compliance.soc2Criteria.join(", ") : "none triggered"}</li>
+                  <li>
+                    · PCI-DSS:{" "}
+                    {compliance.pciDssRequirements.length
+                      ? compliance.pciDssRequirements.join(", ")
+                      : "none triggered"}
+                  </li>
+                  <li>
+                    · SOC 2:{" "}
+                    {compliance.soc2Criteria.length
+                      ? compliance.soc2Criteria.join(", ")
+                      : "none triggered"}
+                  </li>
                 </ul>
               )}
             </div>
             <div className="rounded-md border border-border/60 bg-muted/20 p-3">
-              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">Pipeline</div>
+              <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
+                Pipeline
+              </div>
               <ul className="mt-1.5 space-y-0.5 text-xs">
-                <li>· Status · <span className="font-medium">{scan.status}</span></li>
+                <li>
+                  · Status · <span className="font-medium">{scan.status}</span>
+                </li>
                 <li>· Engines · structural (AST/heuristic) + AI</li>
               </ul>
             </div>
           </section>
 
           <section className="rounded-md border border-border/60 bg-card/60 p-3 text-[11px] leading-relaxed text-muted-foreground">
-            This executive summary is generated from the latest scan snapshot. For per-finding remediation,
-            side-by-side diffs, and AI-suggested patches, open the interactive workspace.
+            This executive summary is generated from the latest scan snapshot.
+            For per-finding remediation, side-by-side diffs, and AI-suggested
+            patches, open the interactive workspace.
           </section>
         </div>
 
         <div className="flex items-center justify-between gap-2 border-t border-border/60 bg-card/40 px-6 py-3 print:hidden">
-          <p className="text-[10px] text-muted-foreground">SecurePulse · confidential</p>
+          <p className="text-[10px] text-muted-foreground">
+            SecurePulse · confidential
+          </p>
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={downloadJson} disabled={busy !== null}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadJson}
+              disabled={busy !== null}
+            >
               {busy === "json" ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Packaging…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Packaging…
+                </>
               ) : (
-                <><FileJson className="mr-1.5 h-3.5 w-3.5" />Export JSON</>
+                <>
+                  <FileJson className="mr-1.5 h-3.5 w-3.5" />
+                  Export JSON
+                </>
               )}
             </Button>
-            <Button variant="outline" size="sm" onClick={downloadSarif} disabled={busy !== null}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={downloadSarif}
+              disabled={busy !== null}
+            >
               {busy === "sarif" ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Building…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Building…
+                </>
               ) : (
-                <><FileCode2 className="mr-1.5 h-3.5 w-3.5" />Export SARIF</>
+                <>
+                  <FileCode2 className="mr-1.5 h-3.5 w-3.5" />
+                  Export SARIF
+                </>
               )}
             </Button>
-            <Button size="sm" onClick={printPdf} disabled={busy !== null} className="glow-primary">
+            <Button
+              size="sm"
+              onClick={printPdf}
+              disabled={busy !== null}
+              className="glow-primary"
+            >
               {busy === "pdf" ? (
-                <><Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />Rendering PDF…</>
+                <>
+                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                  Rendering PDF…
+                </>
               ) : (
-                <><Printer className="mr-1.5 h-3.5 w-3.5" />Print / Save as PDF</>
+                <>
+                  <Printer className="mr-1.5 h-3.5 w-3.5" />
+                  Print / Save as PDF
+                </>
               )}
             </Button>
           </div>

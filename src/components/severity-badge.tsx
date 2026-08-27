@@ -1,7 +1,13 @@
 import { severityClasses, type Severity } from "@/lib/severity";
 import { cn } from "@/lib/utils";
 
-export function SeverityBadge({ severity, className }: { severity: Severity; className?: string }) {
+export function SeverityBadge({
+  severity,
+  className,
+}: {
+  severity: Severity;
+  className?: string;
+}) {
   return (
     <span
       className={cn(

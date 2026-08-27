@@ -47,7 +47,10 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
           <button
-            onClick={() => { router.invalidate(); reset(); }}
+            onClick={() => {
+              router.invalidate();
+              reset();
+            }}
             className="inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
           >
             Retry
@@ -64,34 +67,43 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
-  head: () => ({
-    meta: [
-      { charSet: "utf-8" },
-      { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "SecurePulse — Cyber Security & Code Integrity Auditor" },
-      {
-        name: "description",
-        content:
-          "Instantly scan code snippets, source files, and repos for OWASP Top 10, CWE, and secret exposure vulnerabilities with AI-generated patches.",
-      },
-      { name: "author", content: "SecurePulse" },
-      { property: "og:title", content: "SecurePulse — Code Integrity Auditor" },
-      { property: "og:description", content: "AI-powered security scanner for engineers and DevOps teams." },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
-    links: [
-      { rel: "stylesheet", href: appCss },
-      { rel: "icon", href: "/securepulse-icon.svg", type: "image/svg+xml" },
-      { rel: "apple-touch-icon", href: "/securepulse-icon.svg" },
-    ],
-  }),
-  shellComponent: RootShell,
-  component: RootComponent,
-  notFoundComponent: NotFoundComponent,
-  errorComponent: ErrorComponent,
-});
+export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
+  {
+    head: () => ({
+      meta: [
+        { charSet: "utf-8" },
+        { name: "viewport", content: "width=device-width, initial-scale=1" },
+        { title: "SecurePulse — Cyber Security & Code Integrity Auditor" },
+        {
+          name: "description",
+          content:
+            "Instantly scan code snippets, source files, and repos for OWASP Top 10, CWE, and secret exposure vulnerabilities with AI-generated patches.",
+        },
+        { name: "author", content: "SecurePulse" },
+        {
+          property: "og:title",
+          content: "SecurePulse — Code Integrity Auditor",
+        },
+        {
+          property: "og:description",
+          content:
+            "AI-powered security scanner for engineers and DevOps teams.",
+        },
+        { property: "og:type", content: "website" },
+        { name: "twitter:card", content: "summary_large_image" },
+      ],
+      links: [
+        { rel: "stylesheet", href: appCss },
+        { rel: "icon", href: "/securepulse-icon.svg", type: "image/svg+xml" },
+        { rel: "apple-touch-icon", href: "/securepulse-icon.svg" },
+      ],
+    }),
+    shellComponent: RootShell,
+    component: RootComponent,
+    notFoundComponent: NotFoundComponent,
+    errorComponent: ErrorComponent,
+  },
+);
 
 function RootShell({ children }: { children: ReactNode }) {
   return (

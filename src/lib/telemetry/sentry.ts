@@ -35,10 +35,15 @@ export function initTelemetry() {
   //     tracesSampleRate: 0.1,
   //     environment: process.env.NODE_ENV,
   //   });
-  console.warn("[telemetry] SENTRY_DSN is set but @sentry/node is not installed — telemetry is a no-op. See sentry.ts.");
+  console.warn(
+    "[telemetry] SENTRY_DSN is set but @sentry/node is not installed — telemetry is a no-op. See sentry.ts.",
+  );
 }
 
-export function captureException(error: unknown, context?: Record<string, unknown>) {
+export function captureException(
+  error: unknown,
+  context?: Record<string, unknown>,
+) {
   if (!initialized) return;
   // Sentry.captureException(error, { extra: context });
   void error;
@@ -56,7 +61,9 @@ export async function withEngineTiming<T>(
     const durationMs = performance.now() - start;
     // Sentry.metrics.distribution("securepulse.engine.duration_ms", durationMs, { tags: { engine: engineName } });
     if (process.env.NODE_ENV !== "production") {
-      console.debug(`[telemetry] ${engineName} engine took ${durationMs.toFixed(1)}ms`);
+      console.debug(
+        `[telemetry] ${engineName} engine took ${durationMs.toFixed(1)}ms`,
+      );
     }
   }
 }

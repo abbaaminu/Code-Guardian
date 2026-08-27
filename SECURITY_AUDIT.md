@@ -31,7 +31,7 @@ infrastructure/credentials to finish. Read it before deploying anything below.
   UX theater. Fixed — see §2.
 - **`code-vault.tsx` is a syntax-highlighted code viewer, not a secrets
   vault.** There is currently no PAT/OAuth token storage anywhere in the app.
-  `connect-repository.tsx` hits the *unauthenticated* public GitHub REST API
+  `connect-repository.tsx` hits the _unauthenticated_ public GitHub REST API
   client-side — it only works for public repos and does it all in the
   browser, with no server-side fetch, no sandboxing, and a raw `owner/repo`
   string built from user input.
@@ -47,20 +47,32 @@ infrastructure/credentials to finish. Read it before deploying anything below.
 
 ## 2. What was implemented for real in this pass
 
-| Area | File(s) | Status |
-|---|---|---|
-| Real AST parsing (JS/TS/JSX/TSX) | `src/lib/ast-sast-engine.ts` | **Working**, uses the TypeScript compiler API (already a dependency — no new install needed) |
-| Lightweight taint tracking | same file | **Working** for intraprocedural cases (see limits below) |
-| Heuristic fallback for other languages | `src/lib/heuristic-sast-engine.ts` | **Working**, same interface, tagged lower confidence |
-| Unified dispatcher | `src/lib/sast-engine.ts` | **Working** |
-| CWE → OWASP/CWE-Top25/PCI-DSS/SOC2 mapping | `src/lib/compliance-mapping.ts` | **Working**, ~20 CWEs mapped — extend the table as new rules are added |
-| SARIF 2.1.0 export | `src/lib/sarif.ts`, `getScanSarif` in `scan.functions.ts`, wired into `report-export-dialog.tsx` | **Working** |
-| Fixed missing-auth vulns | `scan.functions.ts` (`copilotRemediate`, `togglePolicy`) | **Fixed** |
-| Removed dead/duplicate scan pipeline | deleted `src/lib/server/scans.ts`, old `sast-engine.ts` | **Done** |
-| Compliance summary computed from real findings | `report-export-dialog.tsx` | **Working** (was hardcoded before) |
-| RLS + multi-tenancy migration | `supabase/migrations/0001_multi_tenancy_rls_and_vault.sql` | **SQL written — you must run it**, see §3 |
-| AES-256-GCM secret encryption | `src/lib/vault/encryption.ts`, `vault.functions.ts` | **Working** crypto, needs the migration run first |
-| Unit tests | `src/lib/**/*.test.ts`, `vitest.config.ts` | **Written**, needs `npm install` to run (see §4) |
+| Area                                           | File(s)                                                                                          | Status                                                                                       |
+| ---------------------------------------------- | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Real AST parsing (JS/TS/JSX/TSX)               | `src/lib/ast-sast-engine.ts`                                                                     | **Working**, uses the TypeScript compiler API (already a dependency — no new install needed) |
+| Lightweight taint tracking                     | same file                                                                                        | **Working** for intraprocedural cases (see limits below)                                     |
+| Heuristic fallback for other languages         | `src/lib/heuristic-sast-engine.ts`                                                               | **Working**, same interface, tagged lower confidence                                         |
+| Unified dispatcher                             | `src/lib/sast-engine.ts`                                                                         | **Working**                                                                                  |
+| CWE → OWASP/CWE-Top25/PCI-DSS/SOC2 mapping     | `src/lib/compliance-mapping.ts`                                                                  | **Working**, ~20 CWEs mapped — extend the table as new rules are added                       |
+| SARIF 2.1.0 export                             | `src/lib/sarif.ts`, `getScanSarif` in `scan.functions.ts`, wired into `report-export-dialog.tsx` | **Working**                                                                                  |
+| Fixed missing-auth vulns                       | `scan.functions.ts` (`copilotRemediate`, `togglePolicy`)                                         | **Fixed**                                                                                    |
+| Removed dead/duplicate scan pipeline           | deleted `src/lib/server/scans.ts`, old `sast-engine.ts`                                          | **Done**                                                                                     |
+| Compliance summary computed from real findings | `report-export-dialog.tsx`                                                                       | **Working** (was hardcoded before)                                                           |
+| RLS + multi-tenancy migration                  | `supabase/migrations/0001_multi_tenancy_rls_and_vault.sql`                                       | **SQL written — you must run it**, see §3                                                    |
+| AES-256-GCM secret encryption                  | `src/lib/vault/encryption.ts`, `vault.functions.ts`                                              | **Working** crypto, needs the migration run first                                            |
+| Unit tests                                     | `src/lib/**/*.test.ts`, `vitest.config.ts`                                                       | **Written**, needs `npm install` to run (see §4)                                             |
+
+### Batch 2 — audit follow-up (C5, H1–H6)
+
+| Area                                          | File(s)                                                                            | Status                                                                                                                                                                         |
+| --------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| C5 — `runAgentTask` is a real server function | `src/lib/agent.functions.ts`, `src/components/agent-panel.tsx`                     | **Fixed**: `createServerFn` + auth middleware + zod input; result fields now `prUrl` / `branchName` / `operations`; GitHub token resolved server-side (vault → `GITHUB_TOKEN`) |
+| H1 — repo-mutation safety                     | `src/lib/agent-safety.ts`, `agent.functions.ts`                                    | **Fixed**: action allow-list, path traversal / absolute-path / sensitive-file checks, content & edit-count caps, validated before any GitHub mutation                          |
+| H2 — ReDoS in heuristic engine                | `src/lib/heuristic-sast-engine.ts`                                                 | **Fixed**: bounded quantifiers, lazy `.*?` (was quadratic), negated backtick class, plus a per-line length guard                                                               |
+| H3 — diff caps & memory                       | `src/lib/diff.ts`                                                                  | **Fixed**: `Uint32Array` DP rows, `MAX_INPUT_LINES`/`MAX_DIFF_ROWS` caps + truncation marker                                                                                   |
+| H4 — per-user Gemini rate limit               | `src/lib/rate-limiter.ts`, `scan.functions.ts`, `agent.functions.ts`               | **Fixed**: token bucket per `user_id`, applied to `runScan`, `copilotRemediate`, `runAgentTask`                                                                                |
+| H5 — `togglePolicy` role gate                 | `scan.functions.ts`, `supabase/migrations/0002_policy_admin_roles.sql`, `types.ts` | **Fixed**: requires `admin` role; **you must run migration 0002**                                                                                                              |
+| H6 — real PDF export                          | `src/lib/pdf.ts`, `src/components/workspace-action-bar.tsx`                        | **Fixed**: dependency-free spec-valid PDF 1.4 generator replaces the plain-text blob mislabeled as `application/pdf`                                                           |
 
 ### AST/taint engine — what it actually catches, and its real limits
 
@@ -91,7 +103,7 @@ code actually looks like).
 1. **Run `supabase/migrations/0001_multi_tenancy_rls_and_vault.sql`** against
    your actual Supabase project (SQL editor or `supabase db push`), then
    regenerate `types.ts` with the Supabase CLI (`supabase gen types
-   typescript --project-id <id> > src/integrations/supabase/types.ts`). I
+typescript --project-id <id> > src/integrations/supabase/types.ts`). I
    hand-edited `types.ts` to add `scans.user_id` and the new `vault_secrets`
    table so the app type-checks against a schema consistent with the
    migration — **verify this against what the CLI actually generates once the
@@ -106,7 +118,7 @@ code actually looks like).
    `.eq("user_id", ...)` filters. The RLS policies added in the migration are
    a defense-in-depth backstop for this — they don't change today's actual
    access-control mechanism, which is still "don't forget the `.eq()`." If you
-   want RLS to be the *actual* enforcement layer, that's a larger refactor
+   want RLS to be the _actual_ enforcement layer, that's a larger refactor
    (switch server functions to a per-request client scoped to the caller's
    JWT instead of the admin client).
 4. Everything in §5 below is a **scaffold**: real, correct code for the parts
@@ -123,7 +135,7 @@ code actually looks like).
   detection cases, the diff algorithm, the compliance mapping, the SARIF
   exporter, AES-GCM round-tripping, and the PR-diff position mapper. These
   could not be executed in this environment (no network access to run `npm
-  install`), so **run them yourself before trusting green** — I traced the
+install`), so **run them yourself before trusting green** — I traced the
   AST-engine test cases against the parser logic by hand, but that's not a
   substitute for actually running them.
 - `npm run test:e2e` (Playwright) is scaffolded in `e2e/smoke.spec.ts` with
@@ -186,14 +198,18 @@ marked. None of them will function until you provide the missing piece.
 
 Not implemented (out of scope for this pass, but worth knowing about):
 
-- **Per-user rate limiting** on `runScan`/`copilotRemediate` now that they
-  require auth — auth alone doesn't stop one account from hammering the Gemini
-  API. A token-bucket in Redis (once you have Redis for the queue anyway) is a
-  natural fit.
-- **Real RBAC/organizations schema.** `togglePolicy` now requires
-  authentication but still can't distinguish "any signed-in user" from "an
-  admin of this org" because there's no roles table. If you're selling to
-  enterprises, this needs to exist before policy management ships broadly.
+- **Per-user rate limiting** on `runScan`/`copilotRemediate`/`runAgentTask` now
+  that they require auth — **implemented in batch 2** as an in-memory token
+  bucket (`src/lib/rate-limiter.ts`, shared `geminiApiRateLimiter`). It's a
+  per-process ceiling, not a distributed one: if you scale to multiple server
+  instances or add the BullMQ queue, move the same `tryTake(userId)` call sites
+  onto a Redis-backed counter — the swap is localized to that one module.
+- **Real RBAC/organizations schema.** `togglePolicy` now requires **both**
+  authentication and the `admin` role (`user_roles` table, migration
+  `0002_policy_admin_roles.sql`). It still can't scope policies per-org (there's
+  no `org_id` on `policies` yet); when organizations exist, extend `user_roles`
+  to an org-scoped membership table and update the single `requireAdminRole`
+  check in `scan.functions.ts`.
 - **Diff-aware incremental scanning** for PRs: only scan changed files/hunks
   (the webhook payload already gives you the diff), not the whole repo, to
   keep PR-check latency low and AI cost down.

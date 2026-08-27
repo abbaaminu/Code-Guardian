@@ -34,8 +34,12 @@ export function AppSidebar() {
             <Radar className="h-4 w-4" />
           </div>
           <div className="flex flex-col leading-none group-data-[collapsible=icon]:hidden">
-            <span className="text-sm font-semibold tracking-tight">SecurePulse</span>
-            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">Code Auditor</span>
+            <span className="text-sm font-semibold tracking-tight">
+              SecurePulse
+            </span>
+            <span className="text-[10px] uppercase tracking-widest text-muted-foreground">
+              Code Auditor
+            </span>
           </div>
         </Link>
       </SidebarHeader>
@@ -46,7 +50,11 @@ export function AppSidebar() {
             <SidebarMenu>
               {items.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={isActive(item.url)}
+                    tooltip={item.title}
+                  >
                     <Link to={item.url}>
                       <item.icon />
                       <span>{item.title}</span>

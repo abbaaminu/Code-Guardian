@@ -4,205 +4,293 @@ export type Json =
   | boolean
   | null
   | { [key: string]: Json | undefined }
-  | Json[]
+  | Json[];
 
 export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.5"
-  }
+    PostgrestVersion: "14.5";
+  };
   public: {
     Tables: {
       policies: {
         Row: {
-          category: string
-          created_at: string
-          description: string
-          enabled: boolean
-          id: string
-          name: string
-        }
+          category: string;
+          created_at: string;
+          description: string;
+          enabled: boolean;
+          id: string;
+          name: string;
+        };
         Insert: {
-          category?: string
-          created_at?: string
-          description: string
-          enabled?: boolean
-          id?: string
-          name: string
-        }
+          category?: string;
+          created_at?: string;
+          description: string;
+          enabled?: boolean;
+          id?: string;
+          name: string;
+        };
         Update: {
-          category?: string
-          created_at?: string
-          description?: string
-          enabled?: boolean
-          id?: string
-          name?: string
-        }
-        Relationships: []
-      }
+          category?: string;
+          created_at?: string;
+          description?: string;
+          enabled?: boolean;
+          id?: string;
+          name?: string;
+        };
+        Relationships: [];
+      };
+      repo_embeddings: {
+        Row: {
+          content: string;
+          created_at: string;
+          embedding: number[];
+          file_path: string;
+          file_sha: string;
+          id: string;
+          owner: string;
+          repo: string;
+        };
+        Insert: {
+          content: string;
+          created_at?: string;
+          embedding: number[];
+          file_path: string;
+          file_sha: string;
+          id?: string;
+          owner: string;
+          repo: string;
+        };
+        Update: {
+          content?: string;
+          created_at?: string;
+          embedding?: number[];
+          file_path?: string;
+          file_sha?: string;
+          id?: string;
+          owner?: string;
+          repo?: string;
+        };
+        Relationships: [];
+      };
       scans: {
         Row: {
-          created_at: string
-          file_type: string
-          health_score: number
-          id: string
-          project_name: string
-          source_code: string
-          status: Database["public"]["Enums"]["scan_status"]
-          user_id: string | null
-          vulnerabilities_count: Json
-        }
+          created_at: string;
+          file_type: string;
+          health_score: number;
+          id: string;
+          project_name: string;
+          source_code: string;
+          status: Database["public"]["Enums"]["scan_status"];
+          user_id: string | null;
+          vulnerabilities_count: Json;
+        };
         Insert: {
-          created_at?: string
-          file_type?: string
-          health_score?: number
-          id?: string
-          project_name: string
-          source_code?: string
-          status?: Database["public"]["Enums"]["scan_status"]
-          user_id?: string | null
-          vulnerabilities_count?: Json
-        }
+          created_at?: string;
+          file_type?: string;
+          health_score?: number;
+          id?: string;
+          project_name: string;
+          source_code?: string;
+          status?: Database["public"]["Enums"]["scan_status"];
+          user_id?: string | null;
+          vulnerabilities_count?: Json;
+        };
         Update: {
-          created_at?: string
-          file_type?: string
-          health_score?: number
-          id?: string
-          project_name?: string
-          source_code?: string
-          status?: Database["public"]["Enums"]["scan_status"]
-          user_id?: string | null
-          vulnerabilities_count?: Json
-        }
-        Relationships: []
-      }
-      vault_secrets: {
-        Row: {
-          id: string
-          user_id: string
-          provider: string
-          label: string
-          encrypted_token: string
-          iv: string
-          auth_tag: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          provider: string
-          label?: string
-          encrypted_token: string
-          iv: string
-          auth_tag: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          provider?: string
-          label?: string
-          encrypted_token?: string
-          iv?: string
-          auth_tag?: string
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: []
-      }
-      vulnerabilities: {
-        Row: {
-          created_at: string
-          cwe_id: string | null
-          file_path: string | null
-          fixed_code_block: string
-          id: string
-          line_end: number | null
-          line_start: number | null
-          remediation_steps: string
-          scan_id: string
-          severity: Database["public"]["Enums"]["vuln_severity"]
-          title: string
-          vulnerable_code_block: string
-        }
-        Insert: {
-          created_at?: string
-          cwe_id?: string | null
-          file_path?: string | null
-          fixed_code_block?: string
-          id?: string
-          line_end?: number | null
-          line_start?: number | null
-          remediation_steps?: string
-          scan_id: string
-          severity: Database["public"]["Enums"]["vuln_severity"]
-          title: string
-          vulnerable_code_block?: string
-        }
-        Update: {
-          created_at?: string
-          cwe_id?: string | null
-          file_path?: string | null
-          fixed_code_block?: string
-          id?: string
-          line_end?: number | null
-          line_start?: number | null
-          remediation_steps?: string
-          scan_id?: string
-          severity?: Database["public"]["Enums"]["vuln_severity"]
-          title?: string
-          vulnerable_code_block?: string
-        }
+          created_at?: string;
+          file_type?: string;
+          health_score?: number;
+          id?: string;
+          project_name?: string;
+          source_code?: string;
+          status?: Database["public"]["Enums"]["scan_status"];
+          user_id?: string | null;
+          vulnerabilities_count?: Json;
+        };
         Relationships: [
           {
-            foreignKeyName: "vulnerabilities_scan_id_fkey"
-            columns: ["scan_id"]
-            isOneToOne: false
-            referencedRelation: "scans"
-            referencedColumns: ["id"]
+            foreignKeyName: "scans_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
           },
-        ]
-      }
-    }
+          {
+            foreignKeyName: "vulnerabilities_scan_id_fkey";
+            columns: ["scan_id"];
+            isOneToOne: false;
+            referencedRelation: "scans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      user_roles: {
+        Row: {
+          created_at: string;
+          role: string;
+          updated_at: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          role?: string;
+          updated_at?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          role?: string;
+          updated_at?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: true;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      vault_secrets: {
+        Row: {
+          id: string;
+          user_id: string;
+          provider: string;
+          label: string;
+          encrypted_token: string;
+          iv: string;
+          auth_tag: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          provider: string;
+          label?: string;
+          encrypted_token: string;
+          iv: string;
+          auth_tag: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          provider?: string;
+          label?: string;
+          encrypted_token?: string;
+          iv?: string;
+          auth_tag?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vault_secrets_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      vulnerabilities: {
+        Row: {
+          created_at: string;
+          cwe_id: string | null;
+          file_path: string | null;
+          fixed_code_block: string;
+          id: string;
+          line_end: number | null;
+          line_start: number | null;
+          remediation_steps: string;
+          scan_id: string;
+          severity: Database["public"]["Enums"]["vuln_severity"];
+          title: string;
+          vulnerable_code_block: string;
+        };
+        Insert: {
+          created_at?: string;
+          cwe_id?: string | null;
+          file_path?: string | null;
+          fixed_code_block?: string;
+          id?: string;
+          line_end?: number | null;
+          line_start?: number | null;
+          remediation_steps?: string;
+          scan_id: string;
+          severity: Database["public"]["Enums"]["vuln_severity"];
+          title: string;
+          vulnerable_code_block?: string;
+        };
+        Update: {
+          created_at?: string;
+          cwe_id?: string | null;
+          file_path?: string | null;
+          fixed_code_block?: string;
+          id?: string;
+          line_end?: number | null;
+          line_start?: number | null;
+          remediation_steps?: string;
+          scan_id?: string;
+          severity?: Database["public"]["Enums"]["vuln_severity"];
+          title?: string;
+          vulnerable_code_block?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "vulnerabilities_scan_id_fkey";
+            columns: ["scan_id"];
+            isOneToOne: false;
+            referencedRelation: "scans";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+    };
     Views: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Functions: {
-      [_ in never]: never
-    }
+      [_ in never]: never;
+    };
     Enums: {
-      scan_status: "queued" | "scanning" | "completed" | "failed"
-      vuln_severity: "low" | "medium" | "high" | "critical"
-    }
+      scan_status: "queued" | "scanning" | "completed" | "failed";
+      vuln_severity: "low" | "medium" | "high" | "critical";
+    };
     CompositeTypes: {
-      [_ in never]: never
-    }
-  }
-}
+      [_ in never]: never;
+    };
+  };
+};
 
-type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">
+type DatabaseWithoutInternals = Omit<Database, "__InternalSupabase">;
 
-type DefaultSchema = DatabaseWithoutInternals[Extract<keyof Database, "public">]
+type DefaultSchema = DatabaseWithoutInternals[Extract<
+  keyof Database,
+  "public"
+>];
 
 export type Tables<
   DefaultSchemaTableNameOrOptions extends
     | keyof (DefaultSchema["Tables"] & DefaultSchema["Views"])
     | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
         DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? (DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
       DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
-      Row: infer R
+      Row: infer R;
     }
     ? R
     : never
@@ -210,95 +298,92 @@ export type Tables<
         DefaultSchema["Views"])
     ? (DefaultSchema["Tables"] &
         DefaultSchema["Views"])[DefaultSchemaTableNameOrOptions] extends {
-        Row: infer R
+        Row: infer R;
       }
       ? R
       : never
-    : never
+    : never;
 
 export type TablesInsert<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Insert: infer I
+      Insert: infer I;
     }
     ? I
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Insert: infer I
+        Insert: infer I;
       }
       ? I
       : never
-    : never
+    : never;
 
 export type TablesUpdate<
   DefaultSchemaTableNameOrOptions extends
-    | keyof DefaultSchema["Tables"]
-    | { schema: keyof DatabaseWithoutInternals },
-  TableName extends DefaultSchemaTableNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    keyof DefaultSchema["Tables"] | { schema: keyof DatabaseWithoutInternals },
+  TableName extends (DefaultSchemaTableNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaTableNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaTableNameOrOptions["schema"]]["Tables"][TableName] extends {
-      Update: infer U
+      Update: infer U;
     }
     ? U
     : never
   : DefaultSchemaTableNameOrOptions extends keyof DefaultSchema["Tables"]
     ? DefaultSchema["Tables"][DefaultSchemaTableNameOrOptions] extends {
-        Update: infer U
+        Update: infer U;
       }
       ? U
       : never
-    : never
+    : never;
 
 export type Enums<
   DefaultSchemaEnumNameOrOptions extends
-    | keyof DefaultSchema["Enums"]
-    | { schema: keyof DatabaseWithoutInternals },
-  EnumName extends DefaultSchemaEnumNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+    keyof DefaultSchema["Enums"] | { schema: keyof DatabaseWithoutInternals },
+  EnumName extends (DefaultSchemaEnumNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"]
-    : never = never,
+    : never) = never,
 > = DefaultSchemaEnumNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[DefaultSchemaEnumNameOrOptions["schema"]]["Enums"][EnumName]
   : DefaultSchemaEnumNameOrOptions extends keyof DefaultSchema["Enums"]
     ? DefaultSchema["Enums"][DefaultSchemaEnumNameOrOptions]
-    : never
+    : never;
 
 export type CompositeTypes<
   PublicCompositeTypeNameOrOptions extends
     | keyof DefaultSchema["CompositeTypes"]
     | { schema: keyof DatabaseWithoutInternals },
-  CompositeTypeName extends PublicCompositeTypeNameOrOptions extends {
-    schema: keyof DatabaseWithoutInternals
+  CompositeTypeName extends (PublicCompositeTypeNameOrOptions extends {
+    schema: keyof DatabaseWithoutInternals;
   }
     ? keyof DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"]
-    : never = never,
+    : never) = never,
 > = PublicCompositeTypeNameOrOptions extends {
-  schema: keyof DatabaseWithoutInternals
+  schema: keyof DatabaseWithoutInternals;
 }
   ? DatabaseWithoutInternals[PublicCompositeTypeNameOrOptions["schema"]]["CompositeTypes"][CompositeTypeName]
   : PublicCompositeTypeNameOrOptions extends keyof DefaultSchema["CompositeTypes"]
     ? DefaultSchema["CompositeTypes"][PublicCompositeTypeNameOrOptions]
-    : never
+    : never;
 
 export const Constants = {
   public: {
@@ -307,4 +392,4 @@ export const Constants = {
       vuln_severity: ["low", "medium", "high", "critical"],
     },
   },
-} as const
+} as const;
