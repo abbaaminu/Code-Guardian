@@ -130,6 +130,18 @@ export function ScanAnalytics({ scans }: { scans: ScanSummary[] }) {
           </div>
         </header>
         <div className="h-56">
+          {/* Charts are pure SVG, which assistive tech can't read — pair each
+              one with a visually-hidden text summary of the underlying data. */}
+          <p className="sr-only">
+            Vulnerability trend over the last 14 days:{" "}
+            {trend
+              .filter((d) => TREND_SEVERITIES.some((s) => d[s] > 0))
+              .map(
+                (d) =>
+                  `${d.label}: ${TREND_SEVERITIES.map((s) => `${d[s]} ${s}`).join(", ")}`,
+              )
+              .join("; ") || "no findings reported."}
+          </p>
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart
               data={trend}
@@ -222,6 +234,15 @@ export function ScanAnalytics({ scans }: { scans: ScanSummary[] }) {
           </div>
         ) : (
           <div className="h-56">
+            <p className="sr-only">
+              Vulnerabilities by language:{" "}
+              {byLanguage
+                .map(
+                  (l) =>
+                    `${l.language}: ${SEVERITIES.map((s) => `${l[s]} ${s}`).join(", ")}`,
+                )
+                .join("; ")}
+            </p>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart
                 data={byLanguage}

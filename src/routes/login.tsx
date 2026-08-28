@@ -155,6 +155,7 @@ function LoginPage() {
             <Input
               type="email"
               placeholder="you@company.com"
+              aria-label="Email address"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -185,6 +186,7 @@ function LoginPage() {
               <button
                 type="button"
                 onClick={() => switchMode("signin")}
+                aria-pressed={mode === "signin"}
                 className={`flex-1 rounded-sm py-1.5 ${mode === "signin" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
               >
                 Sign in
@@ -192,6 +194,7 @@ function LoginPage() {
               <button
                 type="button"
                 onClick={() => switchMode("signup")}
+                aria-pressed={mode === "signup"}
                 className={`flex-1 rounded-sm py-1.5 ${mode === "signup" ? "bg-primary text-primary-foreground" : "text-muted-foreground"}`}
               >
                 Create account
@@ -202,6 +205,7 @@ function LoginPage() {
               <Input
                 type="email"
                 placeholder="you@company.com"
+                aria-label="Email address"
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
@@ -213,6 +217,7 @@ function LoginPage() {
                 <Input
                   type="password"
                   placeholder="Password"
+                  aria-label="Password"
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);

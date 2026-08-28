@@ -230,6 +230,7 @@ export function ScanForm({
               if (error) setError(null);
             }}
             placeholder="// Paste your source code here..."
+            aria-label="Source code to scan"
             className={cn(
               "min-h-[240px] bg-[oklch(0.13_0.02_250)] font-mono text-sm",
               error && "border-critical/70 focus-visible:ring-critical/40",
@@ -249,7 +250,10 @@ export function ScanForm({
               browse files
               <input
                 type="file"
-                className="hidden"
+                // sr-only (NOT `hidden`): keeps the input in the tab order and
+                // the accessibility tree so keyboard and screen-reader users
+                // can reach the file picker.
+                className="sr-only"
                 onChange={onPick}
                 accept=".py,.js,.ts,.tsx,.sol,.go,.rb,.java,.php,.cs,.rs,.sql,Dockerfile,.txt"
               />

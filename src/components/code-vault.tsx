@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef } from "react";
+import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { cn } from "@/lib/utils";
 import type { Severity } from "@/lib/severity";
@@ -240,16 +241,38 @@ export function CodeVault({
     const isActive = hl && hl.vulnId === activeVulnId;
     const isPatched = patchedLines.has(n);
     const tokens = tokenize(line);
+    // Highlighted lines are interactive (click a line to inspect the finding).
+    // Expose them as buttons so keyboard and screen-reader users can reach
+    // them: Enter/Space activates, exactly like a native button.
+    const lineKeyHandler =
+      hl && !isPatched
+        ? (e: ReactKeyboardEvent) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onLineClick(hl.vulnId);
+            }
+          }
+        : undefined;
     return (
       <div
         key={n}
         data-line={n}
+        role={hl && !isPatched ? "button" : undefined}
+        tabIndex={hl && !isPatched ? 0 : undefined}
         onClick={() => hl && onLineClick(hl.vulnId)}
+        onKeyDown={lineKeyHandler}
+        aria-label={
+          hl && !isPatched
+            ? `Line ${n}, ${hl.severity} severity finding — inspect details`
+            : undefined
+        }
         style={{ height: ROW_HEIGHT }}
         className={cn(
           "group grid grid-cols-[3.5rem_1.25rem_1fr] items-center transition-colors",
+          hl &&
+            !isPatched &&
+            "cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary",
           hl && sevBg(hl.severity),
-          hl && "cursor-pointer",
           isActive && "ring-1 ring-inset ring-primary/40",
           isPatched && "!bg-low/20 !border-l-2 !border-low animate-fade-in",
         )}

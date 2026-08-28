@@ -27,7 +27,11 @@ export function RequireAuth({ children }: { children: ReactNode }) {
 
   if (!checked) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-muted-foreground">
+      <div
+        role="status"
+        aria-live="polite"
+        className="flex min-h-screen items-center justify-center text-muted-foreground"
+      >
         <Loader2 className="h-5 w-5 animate-spin" />
       </div>
     );

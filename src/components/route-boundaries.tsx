@@ -15,7 +15,10 @@ export function RouteErrorFallback({
   const router = useRouter();
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div
+      role="alert"
+      className="flex min-h-screen items-center justify-center bg-background px-4"
+    >
       <div className="max-w-md text-center">
         <AlertTriangle className="mx-auto h-10 w-10 text-critical" />
         <h1 className="mt-4 text-xl font-semibold">Scanner error</h1>
@@ -48,7 +51,11 @@ export function RouteErrorFallback({
 
 export function RoutePendingFallback() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-background px-4">
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex min-h-screen items-center justify-center bg-background px-4"
+    >
       <div className="flex flex-col items-center gap-3 text-muted-foreground">
         <Loader2 className="h-6 w-6 animate-spin text-primary" />
         <span className="text-sm">Loading…</span>

@@ -1,6 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { buildSarifLog, type SarifFinding } from "./sarif";
 
+// Minimal structural types for the SARIF shapes the tests reach into.
+interface SarifResult {
+  ruleId: string;
+  ruleIndex: number;
+  level?: "error" | "warning" | "note" | "none";
+  locations?: Array<{
+    physicalLocation: { region: { startLine: number } };
+  }>;
+}
+
+interface SarifRule {
+  id: string;
+  properties: { tags: string[] };
+}
+
+interface SarifLog {
+  version: string;
+  runs: Array<{
+    tool: { driver: { name: string; rules?: SarifRule[] } };
+    results: SarifResult[];
+  }>;
+}
+
 function finding(overrides: Partial<SarifFinding> = {}): SarifFinding {
   return {
     title: "SQL Injection via string-built query",
@@ -22,7 +45,7 @@ describe("buildSarifLog", () => {
       scanId: "scan-1",
       projectName: "demo",
       findings: [finding()],
-    });
+    }) as unknown as SarifLog;
     expect(log.version).toBe("2.1.0");
     expect(log.runs).toHaveLength(1);
     expect(log.runs[0].tool.driver.name).toBe("SecurePulse");
@@ -38,8 +61,8 @@ describe("buildSarifLog", () => {
         finding({ severity: "medium" }),
         finding({ severity: "low" }),
       ],
-    });
-    const levels = log.runs[0].results.map((r: any) => r.level);
+    }) as unknown as SarifLog;
+    const levels = log.runs[0].results.map((r) => r.level);
     expect(levels).toEqual(["error", "warning", "note"]);
   });
 
@@ -49,7 +72,7 @@ describe("buildSarifLog", () => {
       scanId: "s",
       projectName: "p",
       findings: [finding(), finding({ line_start: 20, line_end: 20 })],
-    });
+    }) as unknown as SarifLog;
     expect(log.runs[0].results).toHaveLength(2);
     expect(log.runs[0].tool.driver.rules).toHaveLength(1);
   });
@@ -60,8 +83,8 @@ describe("buildSarifLog", () => {
       scanId: "s",
       projectName: "p",
       findings: [finding()],
-    });
-    const rule = log.runs[0].tool.driver.rules[0] as any;
+    }) as unknown as SarifLog;
+    const rule = log.runs[0].tool.driver.rules![0];
     expect(rule.properties.tags).toContain("A03:2021 - Injection");
   });
 
@@ -71,9 +94,8 @@ describe("buildSarifLog", () => {
       scanId: "s",
       projectName: "p",
       findings: [finding({ line_start: null, line_end: null })],
-    });
-    const region = (log.runs[0].results[0] as any).locations[0].physicalLocation
-      .region;
+    }) as unknown as SarifLog;
+    const region = log.runs[0].results[0].locations![0].physicalLocation.region;
     expect(region.startLine).toBeGreaterThanOrEqual(1);
   });
 });

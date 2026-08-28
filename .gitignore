@@ -1,1 +1,31 @@
+# Dependencies
 node_modules
+
+# Environment files — never commit real secrets.
+# Copy .env.example to .env and fill in real values locally / in the platform's
+# project settings (Vercel/Cloudflare dashboard).
+.env
+.env.*
+!.env.example
+
+# Build output
+.output/
+dist/
+.vercel/
+
+# Deployment tooling state
+.wrangler/
+.tanstack/
+
+# Test / coverage
+coverage/
+playwright-report/
+
+# Editor / OS
+.DS_Store
+*.local
+*.log
+.vscode/*
+!.vscode/extensions.json
+.idea/
+

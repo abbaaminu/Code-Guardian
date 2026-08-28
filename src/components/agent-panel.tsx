@@ -90,12 +90,14 @@ export function AgentPanel() {
       <div className="grid grid-cols-2 gap-3">
         <Input
           placeholder="Owner (e.g. acme-corp)"
+          aria-label="Repository owner"
           value={owner}
           disabled={loading}
           onChange={(e) => setOwner(e.target.value)}
         />
         <Input
           placeholder="Repository (e.g. core-api)"
+          aria-label="Repository name"
           value={repo}
           disabled={loading}
           onChange={(e) => setRepo(e.target.value)}
@@ -104,6 +106,7 @@ export function AgentPanel() {
 
       <Input
         placeholder="Base branch (default: main)"
+        aria-label="Base branch"
         value={branch}
         disabled={loading}
         onChange={(e) => setBranch(e.target.value)}
@@ -111,6 +114,7 @@ export function AgentPanel() {
 
       <Textarea
         placeholder="e.g. Migrate local SQL string concatenation in /api/users.ts to parameterized Supabase RPC calls."
+        aria-label="Change instruction"
         value={instruction}
         disabled={loading}
         onChange={(e) => setInstruction(e.target.value)}
@@ -132,7 +136,10 @@ export function AgentPanel() {
       </Button>
 
       {error && (
-        <div className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+        <div
+          role="alert"
+          className="flex items-center gap-2 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive"
+        >
           <AlertCircle className="h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>

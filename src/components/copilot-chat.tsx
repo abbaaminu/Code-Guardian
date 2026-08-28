@@ -316,7 +316,7 @@ export function CopilotChat({
         )}
 
         {loading && (
-          <div className="flex gap-2">
+          <div role="status" aria-live="polite" className="flex gap-2">
             <div className="mt-0.5 flex h-6 w-6 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary">
               <Bot className="h-3.5 w-3.5" />
             </div>
@@ -342,6 +342,7 @@ export function CopilotChat({
           value={input}
           onChange={(e) => setInput(e.target.value)}
           disabled={loading || !sourceCode.trim()}
+          aria-label="Ask the AI remediation copilot"
           placeholder={
             sourceCode.trim()
               ? "e.g. Fix the XSS on line 42 using DOMPurify…"
@@ -353,6 +354,7 @@ export function CopilotChat({
           type="submit"
           size="sm"
           disabled={loading || !input.trim() || !sourceCode.trim()}
+          aria-label="Send message"
           className="h-7 w-7 shrink-0 bg-primary p-0 text-primary-foreground hover:opacity-90"
         >
           {loading ? (

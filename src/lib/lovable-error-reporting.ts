@@ -1,40 +1,18 @@
-type LovableErrorOptions = {
-  mechanism?:
-    "manual" | "onerror" | "unhandledrejection" | "react_error_boundary";
-  handled?: boolean;
-  severity?: "error" | "warning" | "info";
-};
-
-type LovableEvents = {
-  captureException?: (
-    error: unknown,
-    context?: Record<string, unknown>,
-    options?: LovableErrorOptions,
-  ) => void;
-};
-
-declare global {
-  interface Window {
-    __lovableEvents?: LovableEvents;
-  }
-}
+// Lovable error reporting has been removed from this project.
+//
+// These exports are intentionally kept as safe no-ops so that any existing
+// call sites (route boundaries, error handlers) keep compiling and running
+// without throwing. The global `window.__lovableEvents` bridge this module used
+// to talk to no longer exists — and should never be reintroduced.
 
 export function reportLovableError(
-  error: unknown,
-  context: Record<string, unknown> = {},
-) {
-  if (typeof window === "undefined") return;
-  window.__lovableEvents?.captureException?.(
-    error,
-    {
-      source: "react_error_boundary",
-      route: window.location.pathname,
-      ...context,
-    },
-    {
-      mechanism: "react_error_boundary",
-      handled: false,
-      severity: "error",
-    },
-  );
-}
+  _error?: unknown,
+  _context?: Record<string, unknown>,
+) {}
+
+export function captureException(
+  _error?: unknown,
+  _context?: Record<string, unknown>,
+) {}
+
+export function initLovableErrorReporting() {}

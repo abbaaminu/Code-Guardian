@@ -91,6 +91,7 @@ export function WorkspaceActionBar({
           variant="ghost"
           onClick={handleRescan}
           disabled={rescanning}
+          aria-label="Re-run scan"
           className="gap-1.5 rounded-full"
         >
           {rescanning ? (
@@ -105,6 +106,7 @@ export function WorkspaceActionBar({
           size="sm"
           variant="ghost"
           onClick={handleFalsePositive}
+          aria-label="Mark finding as false positive"
           className={cn("gap-1.5 rounded-full", fpMarked && "text-low")}
         >
           <ShieldOff className="h-3.5 w-3.5" />
@@ -117,6 +119,7 @@ export function WorkspaceActionBar({
           size="sm"
           onClick={handleDownload}
           disabled={downloading}
+          aria-label="Download remediation PDF"
           className="gap-1.5 rounded-full bg-primary text-primary-foreground hover:opacity-90"
         >
           {downloading ? (

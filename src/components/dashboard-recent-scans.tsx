@@ -57,6 +57,7 @@ export function RecentScansTable({
               <TableRow>
                 <TableCell
                   colSpan={6}
+                  role="status"
                   className="py-10 text-center text-sm text-muted-foreground"
                 >
                   Loading…

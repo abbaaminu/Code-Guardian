@@ -44,6 +44,25 @@ const SCANNABLE_EXTENSIONS = new Set([
 const MAX_FILES = 25;
 const MAX_TOTAL_CHARS = 60000; // keep the Gemini payload reasonable
 
+/** Minimal GitHub API repo shape used by the connect panel. */
+interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  html_url: string;
+  description: string | null;
+  default_branch?: string;
+  language?: string | null;
+  owner?: { login: string } | null;
+}
+
+/** A `blob` entry from the GitHub git-trees API. */
+interface GitTreeBlob {
+  path: string;
+  size: number;
+  type: "blob" | "tree" | "commit";
+}
+
 async function fetchRepoSourceCode(
   owner: string,
   repoName: string,
@@ -57,9 +76,9 @@ async function fetchRepoSourceCode(
       "Could not read repository file tree (branch may be wrong or repo is empty).",
     );
   }
-  const treeData = await treeRes.json();
-  const blobs: { path: string; size: number }[] = (treeData.tree || []).filter(
-    (item: any) =>
+  const treeData = (await treeRes.json()) as { tree?: GitTreeBlob[] };
+  const blobs = (treeData.tree || []).filter(
+    (item) =>
       item.type === "blob" &&
       typeof item.size === "number" &&
       item.size < 50000 && // skip huge generated/minified files
@@ -104,7 +123,7 @@ export function ConnectRepositoryPanel({
   onSelectRepo,
 }: ConnectRepositoryPanelProps) {
   const [username, setUsername] = useState("");
-  const [repos, setRepos] = useState<any[]>([]);
+  const [repos, setRepos] = useState<GitHubRepo[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [scanningRepo, setScanningRepo] = useState<string | null>(null);
@@ -173,7 +192,7 @@ export function ConnectRepositoryPanel({
     }
   };
 
-  const handleScanRepo = async (repo: any) => {
+  const handleScanRepo = async (repo: GitHubRepo) => {
     if (onSelectRepo) {
       onSelectRepo(repo.html_url, repo.name);
     }
@@ -209,6 +228,7 @@ export function ConnectRepositoryPanel({
       <div className="flex gap-2">
         <Input
           placeholder="Enter username or repo URL (e.g., octocat/Hello-World)..."
+          aria-label="GitHub username or repository URL"
           value={username}
           onChange={(e) => setUsername(e.target.value)}
           className="bg-slate-950 border-slate-800 text-white"
@@ -227,7 +247,11 @@ export function ConnectRepositoryPanel({
         </Button>
       </div>
 
-      {error && <p className="text-red-400 text-sm">{error}</p>}
+      {error && (
+        <p role="alert" className="text-red-400 text-sm">
+          {error}
+        </p>
+      )}
 
       <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
         {repos.map((repo) => (
