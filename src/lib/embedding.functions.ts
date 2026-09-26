@@ -116,7 +116,7 @@ async function fetchRepoContext(
 
 export const indexRepository = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         owner: z.string(),

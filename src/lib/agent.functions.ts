@@ -312,7 +312,7 @@ export async function triggerValidationWorkflow(
  */
 export const runAgentTask = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => AgentTaskInputSchema.parse(input))
+  .validator((input: unknown) => AgentTaskInputSchema.parse(input))
   .handler(async ({ data, context }) => {
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {

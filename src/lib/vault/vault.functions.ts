@@ -38,7 +38,7 @@ const SaveTokenInput = z.object({
 
 export const saveRepoToken = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => SaveTokenInput.parse(input))
+  .validator((input: unknown) => SaveTokenInput.parse(input))
   .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
     const { encryptSecret } = await encryption();
@@ -62,7 +62,7 @@ export const saveRepoToken = createServerFn({ method: "POST" })
 
 export const deleteRepoToken = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z
       .object({
         provider: z.enum(["github", "gitlab"]),

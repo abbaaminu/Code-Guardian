@@ -192,7 +192,7 @@ ${code}
 
 export const runScan = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => ScanInput.parse(input))
+  .validator((input: unknown) => ScanInput.parse(input))
   .handler(async ({ data, context }) => {
     // H4: per-user rate limit before any work starts (this endpoint burns
     // Gemini quota). Checked first so over-budget users don't even create a
@@ -297,7 +297,7 @@ export const listScans = createServerFn({ method: "GET" })
 
 export const getScanReport = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z.object({ id: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -329,7 +329,7 @@ export const getScanReport = createServerFn({ method: "GET" })
 // another user's findings just because they knew a scan id.
 export const getScanSarif = createServerFn({ method: "GET" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z.object({ id: z.string().uuid() }).parse(input),
   )
   .handler(async ({ data, context }) => {
@@ -390,7 +390,7 @@ const CopilotInput = z.object({
 // Gemini quota/budget.
 export const copilotRemediate = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) => CopilotInput.parse(input))
+  .validator((input: unknown) => CopilotInput.parse(input))
   .handler(async ({ data, context }) => {
     if (!geminiApiRateLimiter.tryTake(context.userId)) {
       throw new Error(
@@ -507,7 +507,7 @@ async function requireAdminRole(
 
 export const togglePolicy = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .inputValidator((input: unknown) =>
+  .validator((input: unknown) =>
     z.object({ id: z.string().uuid(), enabled: z.boolean() }).parse(input),
   )
   .handler(async ({ data, context }) => {
