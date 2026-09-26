@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "framework": "nitro",
+  "framework": "tanstack-start",
   "buildCommand": "npm run build",
   "headers": [
     {
