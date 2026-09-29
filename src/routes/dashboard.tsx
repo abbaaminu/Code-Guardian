@@ -4,7 +4,11 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
-import { ScanSimulator } from "@/components/scan-simulator";
+import {
+  ScanProgress,
+  type LocalEngineStage,
+  type ScanProgressResult,
+} from "@/components/scan-progress";
 import { ScanAnalytics } from "@/components/scan-analytics";
 import { ReportExportDialog } from "@/components/report-export-dialog";
 import { CopilotChat } from "@/components/copilot-chat";
@@ -20,6 +24,7 @@ import {
   RoutePendingFallback,
 } from "@/components/route-boundaries";
 import { useScansQuery } from "@/hooks/use-scan-queries";
+import { countBySeverity, runInstantLocalScan } from "@/lib/instant-scan";
 import { listScans, runScan } from "@/lib/scan.functions";
 import type { ScanSummary } from "@/lib/scan-types";
 
@@ -67,10 +72,17 @@ function Dashboard() {
   const run = useServerFn(runScan);
   const { scans, isLoading } = useScansQuery(Route.useLoaderData().scans);
 
-  const [completedScanId, setCompletedScanId] = useState<string | null>(null);
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">(
     "idle",
   );
+  const [result, setResult] = useState<ScanProgressResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [local, setLocal] = useState<LocalEngineStage>({
+    status: "pending",
+    engine: null,
+    counts: null,
+    error: null,
+  });
   const [exportScan, setExportScan] = useState<ScanSummary | null>(null);
   const [copilotCode, setCopilotCode] = useState("");
   const [copilotFileType, setCopilotFileType] = useState("Python");
@@ -80,13 +92,49 @@ function Dashboard() {
       project_name: string;
       file_type: string;
       source_code: string;
-    }) => run({ data: input }),
+    }) => {
+      // Engine 1 (deterministic local pass) is dispatched directly from the
+      // browser against POST /api/scan/instant, in parallel with the AI pass.
+      // It reports its own real engine choice and finding counts within
+      // milliseconds, which is what the progress panel renders — previously
+      // this information was invented by an animation.
+      const localPass = runInstantLocalScan({
+        file_type: input.file_type,
+        source_code: input.source_code,
+      })
+        .then((res) => {
+          setLocal({
+            status: "done",
+            engine: res.engine,
+            counts: countBySeverity(res.findings),
+            error: null,
+          });
+        })
+        .catch((err: unknown) => {
+          // Not fatal: `runScan` runs the same engine server-side and persists
+          // whatever it found. Surface the failure instead of hiding it.
+          setLocal({
+            status: "failed",
+            engine: null,
+            counts: null,
+            error:
+              err instanceof Error
+                ? err.message
+                : "Local engine request failed.",
+          });
+        });
+
+      const [scan] = await Promise.all([run({ data: input }), localPass]);
+      return scan;
+    },
     onMutate: () => {
       setPhase("running");
-      setCompletedScanId(null);
+      setResult(null);
+      setError(null);
+      setLocal({ status: "running", engine: null, counts: null, error: null });
     },
     onSuccess: async (res) => {
-      setCompletedScanId(res.id);
+      setResult(res);
       setPhase("done");
       toast.success("Scan completed successfully", {
         description: `Health score: ${res.health_score ?? 80}/100`,
@@ -95,6 +143,7 @@ function Dashboard() {
     },
     onError: (e: Error) => {
       setPhase("failed");
+      setError(e.message || "Unable to complete security audit.");
       toast.error("Scan error", {
         description: e.message || "Unable to complete security audit.",
       });
@@ -102,7 +151,14 @@ function Dashboard() {
   });
 
   const totals = computeScanTotals(scans);
-  const showSimulator = phase !== "idle";
+  const showProgress = phase !== "idle";
+
+  const dismissProgress = () => {
+    setPhase("idle");
+    setResult(null);
+    setError(null);
+    setLocal({ status: "pending", engine: null, counts: null, error: null });
+  };
 
   return (
     <RequireAuth>
@@ -127,16 +183,14 @@ function Dashboard() {
 
         <div className="mx-auto max-w-7xl space-y-8 px-6 py-8">
           <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(360px,420px)]">
-            {showSimulator ? (
-              <ScanSimulator
-                running={phase === "running"}
-                completed={phase === "done"}
-                failed={phase === "failed"}
-                scanId={completedScanId}
-                onDismiss={() => {
-                  setPhase("idle");
-                  setCompletedScanId(null);
-                }}
+            {showProgress ? (
+              <ScanProgress
+                phase={phase}
+                fileType={copilotFileType}
+                local={local}
+                result={result}
+                error={error}
+                onDismiss={dismissProgress}
               />
             ) : (
               <ScanForm

@@ -129,10 +129,14 @@ async function getInstructionEmbedding(
 /**
  * Queries Supabase pgvector to retrieve the most relevant file chunks for the given instruction.
  * `supabase` is the server-side client resolved inside the runAgentTask handler.
+ * `userId` is the authenticated caller: the retrieval runs on the service-role
+ * client, which bypasses RLS, so this parameter is the only thing scoping the
+ * search to the caller's own embeddings (see 0003_repo_embeddings.sql).
  */
 export async function retrieveRepoContext(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: any,
+  userId: string,
   owner: string,
   repo: string,
   instruction: string,
@@ -147,13 +151,14 @@ export async function retrieveRepoContext(
     );
   }
 
-  // Call the Supabase RPC function created during your pgvector setup
+  // RPC created by supabase/migrations/0003_repo_embeddings.sql.
   const { data, error } = await supabase.rpc("search_repo_context", {
     query_embedding: queryVector,
     match_threshold: 0.5,
     match_count: matchCount,
     repo_owner: owner,
     repo_name: repo,
+    match_user_id: userId,
   });
 
   if (error) {
@@ -340,6 +345,7 @@ export const runAgentTask = createServerFn({ method: "POST" })
     // Step 1: Retrieve semantic context from Supabase pgvector store
     const contextFiles = await retrieveRepoContext(
       supabase,
+      context.userId,
       data.owner,
       data.repo,
       data.instruction,

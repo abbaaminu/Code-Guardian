@@ -125,15 +125,34 @@ export const indexRepository = createServerFn({ method: "POST" })
       })
       .parse(input),
   )
-  .handler(async ({ data }) => {
+  .handler(async ({ data, context }) => {
     const supabase = await serverSupabase();
+    const userId = context.userId;
     // M3: read GITHUB_TOKEN via the server-only token module instead of
     // touching process.env directly in a module that ships to the client.
     const { getGithubToken } = await import("@/lib/github/token.server");
-    const token = getGithubToken();
+    // Per-user PAT (encrypted vault) first, so private repositories and the
+    // user's own GitHub rate limit are used; the bot token is the fallback for
+    // deployments that only have a single automation account.
     const apiKey = process.env.GOOGLE_API_KEY;
+    let token = getGithubToken();
+    try {
+      const { getDecryptedRepoTokenServerOnly } =
+        await import("@/lib/vault/vault.functions");
+      token =
+        (await getDecryptedRepoTokenServerOnly(userId, "github")) ?? token;
+    } catch (err) {
+      console.warn("[embedding] Could not load GitHub token from vault:", err);
+    }
 
-    if (!token || !apiKey) throw new Error("Missing required API credentials.");
+    if (!apiKey) {
+      throw new Error("GOOGLE_API_KEY environment variable is not configured.");
+    }
+    if (!token) {
+      throw new Error(
+        "No GitHub token configured. Save one in the token vault or set the GITHUB_TOKEN environment variable.",
+      );
+    }
 
     // 1. Fetch all relevant files from the repo.
     const files = await fetchRepoContext(
@@ -145,22 +164,15 @@ export const indexRepository = createServerFn({ method: "POST" })
     if (!files.length)
       return { success: false, message: "No files found to index." };
 
-    // 2. Clear stale embeddings for this repo to prevent hallucination on old logic.
-    // NOTE: the `repo_embeddings` table is not yet present in the generated
-    // Database types or migrations. Guard the delete so a missing table fails
-    // gracefully instead of aborting the whole index.
-    const { error: deleteErr } = await supabase
-      .from("repo_embeddings")
-      .delete()
-      .match({ owner: data.owner, repo: data.repo });
-    if (deleteErr) {
-      console.warn(
-        `[embedding] Could not clear stale embeddings: ${deleteErr.message}`,
-      );
-    }
+    // 2. Every read and write below is scoped by `user_id`. `repo_embeddings`
+    // holds repository content, which is tenant data, and this handler runs on
+    // the service-role client (which bypasses RLS) — so the explicit user_id
+    // filter and column are the isolation that actually applies here. Schema:
+    // supabase/migrations/0003_repo_embeddings.sql.
 
     // 3. Generate embeddings and store them.
     const records: Array<{
+      user_id: string;
       owner: string;
       repo: string;
       file_path: string;
@@ -191,6 +203,7 @@ export const indexRepository = createServerFn({ method: "POST" })
 
       if (embedding) {
         records.push({
+          user_id: userId,
           owner: data.owner,
           repo: data.repo,
           file_path: file.path,
@@ -205,9 +218,58 @@ export const indexRepository = createServerFn({ method: "POST" })
       return { success: false, message: "No embeddings could be generated." };
     }
 
-    // 4. Batch insert into pgvector.
-    const { error } = await supabase.from("repo_embeddings").insert(records);
-    if (error) throw new Error("Failed to store repository embeddings.");
+    // 4. Upsert into pgvector. The unique key is
+    // (user_id, owner, repo, file_path), so re-indexing is idempotent and a
+    // changed file_sha simply replaces the previous chunk. Upserting first
+    // instead of clearing the repo's rows up front matters: a re-index that
+    // fails partway now leaves the previous index intact rather than leaving the
+    // agent with no context at all.
+    const { error } = await supabase
+      .from("repo_embeddings")
+      .upsert(records, { onConflict: "user_id,owner,repo,file_path" });
+    if (error) {
+      throw new Error(
+        `Failed to store repository embeddings: ${error.message}`,
+      );
+    }
 
-    return { success: true, filesIndexed: records.length };
+    // 5. Prune rows for files that no longer exist (deleted or renamed) so a
+    // removed file cannot keep resurfacing in agent context. Scoped by user_id
+    // and repo: another tenant's index must never be touched.
+    const { data: existing, error: existingErr } = await supabase
+      .from("repo_embeddings")
+      .select("file_path")
+      .eq("user_id", userId)
+      .eq("owner", data.owner)
+      .eq("repo", data.repo);
+    if (existingErr) {
+      console.warn(
+        `[embedding] Could not list stored paths for pruning: ${existingErr.message}`,
+      );
+    }
+    const indexedPaths = new Set(records.map((r) => r.file_path));
+    const stalePaths = ((existing ?? []) as Array<{ file_path: string }>)
+      .map((row) => row.file_path)
+      .filter((path) => !indexedPaths.has(path));
+
+    if (stalePaths.length > 0) {
+      const { error: pruneErr } = await supabase
+        .from("repo_embeddings")
+        .delete()
+        .eq("user_id", userId)
+        .eq("owner", data.owner)
+        .eq("repo", data.repo)
+        .in("file_path", stalePaths);
+      if (pruneErr) {
+        console.warn(
+          `[embedding] Could not prune ${stalePaths.length} stale path(s): ${pruneErr.message}`,
+        );
+      }
+    }
+
+    return {
+      success: true,
+      filesIndexed: records.length,
+      stalePathsRemoved: stalePaths.length,
+    };
   });

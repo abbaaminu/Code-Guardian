@@ -1,15 +1,17 @@
-// GitHub App webhook receiver. Wires the "GitHub App Integration" roadmap item:
-// triggers automatically on pull_request events instead of requiring a manual
-// UI scan.
+// GitHub App webhook receiver. Triggers an automatic scan on pull request
+// activity instead of requiring a manual dashboard scan.
 //
-// This verifies the webhook signature for real (timing-safe HMAC-SHA256
-// comparison against GITHUB_WEBHOOK_SECRET) and parses the pull_request
-// payload. What it does NOT do yet — because it genuinely needs infrastructure
-// this sandbox can't stand up — is fetch the PR diff and enqueue a background
-// scan job; that's `enqueueScanJob` from src/lib/queue/scan-queue.ts, which is
-// itself a scaffold pending a real Redis instance. Once that queue exists,
-// swap the TODO below for a real `await enqueueScanJob(...)` call — this route
-// itself needs no further changes.
+// SECURITY: every delivery is authenticated by a timing-safe HMAC-SHA256 check
+// of `x-hub-signature-256` against GITHUB_WEBHOOK_SECRET before any work happens.
+// Without that secret configured the route refuses all deliveries (503) rather
+// than trusting the body.
+//
+// ON SUCCESS the handler runs the real scan inline: pr-scan.ts mints an
+// installation token, reads each changed file at the PR head, runs the local
+// SAST engine, and posts the findings as a PR review with inline comments.
+//
+// ON FAILURE it answers 5xx so GitHub retries the delivery (its retry policy
+// covers 5xx and timeouts but not 4xx). Errors are also reported to telemetry.
 //
 // Register the webhook URL as https://<your-domain>/api/webhooks/github in the
 // GitHub App settings, subscribed to at least the `pull_request` event.
@@ -17,6 +19,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { scanPullRequest } from "@/lib/github/pr-scan";
+import { captureException } from "@/lib/telemetry/sentry";
 
 function verifySignature(
   rawBody: string,
@@ -41,9 +45,17 @@ interface PullRequestPayload {
     head: { sha: string; ref: string };
     base: { sha: string; ref: string };
   };
-  repository: { full_name: string; owner: { login: string }; name: string };
+  repository: {
+    full_name: string;
+    owner: { login: string };
+    name: string;
+  };
   installation?: { id: number };
 }
+
+// Actions that change the code under review. "synchronize" is a push to the PR
+// branch; a closed/edited/labeled event has nothing new to scan.
+const SCANNABLE_ACTIONS = new Set(["opened", "synchronize", "reopened"]);
 
 export const Route = createFileRoute("/api/webhooks/github")({
   server: {
@@ -65,45 +77,73 @@ export const Route = createFileRoute("/api/webhooks/github")({
 
         const event = request.headers.get("x-github-event");
 
-        if (event === "pull_request") {
-          // M2: GitHub always sends JSON, but a malformed delivery or a probe
-          // hitting the URL directly must not crash the handler — reject it.
-          let payload: PullRequestPayload;
-          try {
-            payload = JSON.parse(rawBody) as PullRequestPayload;
-          } catch {
-            return new Response("Invalid JSON payload", { status: 400 });
-          }
-          if (["opened", "synchronize", "reopened"].includes(payload.action)) {
-            const installationId = payload.installation?.id;
-            if (!installationId) {
-              return new Response("Missing installation id", { status: 400 });
-            }
-
-            // TODO(queue): once src/lib/queue/scan-queue.ts is backed by a real
-            // Redis instance, replace this with:
-            //   await enqueueScanJob({
-            //     type: "pull_request",
-            //     installationId,
-            //     repoFullName: payload.repository.full_name,
-            //     prNumber: payload.number,
-            //     headSha: payload.pull_request.head.sha,
-            //   });
-            // The worker then fetches the diff via getInstallationToken() +
-            // the GitHub API, runs runLocalSAST + the AI engine per changed
-            // file, and posts results with src/lib/github/pr-comments.ts.
-            console.log(
-              `[github webhook] PR #${payload.number} on ${payload.repository.full_name} queued for scan (installation ${installationId}) — queue not yet wired, see TODO.`,
-            );
-          }
-        } else if (event === "installation") {
-          // TODO: persist installation.id against the connecting user/org so
-          // getInstallationToken() can be called later without the webhook
-          // payload in hand. Needs a github_installations table.
-          console.log("[github webhook] installation event received");
+        if (event === "installation") {
+          // Installation lifecycle events are acknowledged but not persisted:
+          // there is no github_installations table in this schema, so there is
+          // nowhere truthful to store the id yet. Log it so the value is
+          // recoverable from logs when that table is added.
+          console.log(
+            `[github webhook] installation event received: ${rawBody.slice(0, 400)}`,
+          );
+          return new Response("ok", { status: 202 });
         }
 
-        return new Response("ok", { status: 202 });
+        if (event !== "pull_request") {
+          // Subscribed to something we don't act on — acknowledge, don't error.
+          return new Response("ignored", { status: 202 });
+        }
+
+        // GitHub always sends JSON, but a malformed delivery or a probe hitting
+        // the URL directly must not crash the handler — reject it.
+        let payload: PullRequestPayload;
+        try {
+          payload = JSON.parse(rawBody) as PullRequestPayload;
+        } catch {
+          return new Response("Invalid JSON payload", { status: 400 });
+        }
+
+        if (!SCANNABLE_ACTIONS.has(payload.action)) {
+          return new Response("ignored", { status: 202 });
+        }
+
+        const installationId = payload.installation?.id;
+        const headSha = payload.pull_request?.head?.sha;
+        const owner = payload.repository?.owner?.login;
+        const repo = payload.repository?.name;
+        if (!installationId || !headSha || !owner || !repo || !payload.number) {
+          return new Response("Incomplete pull_request payload", {
+            status: 400,
+          });
+        }
+
+        try {
+          const summary = await scanPullRequest({
+            installationId,
+            owner,
+            repo,
+            pullNumber: payload.number,
+            headSha,
+          });
+          console.log(
+            `[github webhook] PR #${payload.number} on ${payload.repository.full_name}: ` +
+              `scanned ${summary.filesScanned}/${summary.filesChanged} files, ` +
+              `${summary.findings} finding(s), ${summary.inlineComments} inline comment(s), ` +
+              `${summary.summarizedOnly} summarised only, ${summary.filesSkipped} skipped`,
+          );
+          return new Response(JSON.stringify(summary), {
+            status: 202,
+            headers: { "Content-Type": "application/json" },
+          });
+        } catch (error) {
+          captureException(error, {
+            source: "github.webhook.pull_request",
+            pullRequest: payload.number,
+            repository: payload.repository.full_name,
+          });
+          console.error("[github webhook] scan failed:", error);
+          // 5xx so GitHub retries the delivery; a 4xx would be treated as final.
+          return new Response("Scan failed", { status: 502 });
+        }
       },
     },
   },

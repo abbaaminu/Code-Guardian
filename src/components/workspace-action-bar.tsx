@@ -1,8 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { RefreshCw, ShieldOff, FileDown, Loader2 } from "lucide-react";
+import { RefreshCw, FileDown, Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
 import { createRemediationReportPdf } from "@/lib/pdf";
 
 interface Props {
@@ -10,7 +9,11 @@ interface Props {
   projectName: string;
   appliedCount: number;
   totalFindings: number;
-  onRescan?: () => void;
+  /**
+   * Re-reads the scan report from the database. Must be the caller's real
+   * query refetch — see `scans.$id.tsx`.
+   */
+  onRefresh: () => Promise<unknown>;
 }
 
 export function WorkspaceActionBar({
@@ -18,35 +21,37 @@ export function WorkspaceActionBar({
   projectName,
   appliedCount,
   totalFindings,
-  onRescan,
+  onRefresh,
 }: Props) {
-  const [rescanning, setRescanning] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [downloading, setDownloading] = useState(false);
-  const [fpMarked, setFpMarked] = useState(false);
 
-  const handleRescan = async () => {
-    setRescanning(true);
-    toast.loading("Re-running scan…", { id: "rescan" });
-    await new Promise((r) => setTimeout(r, 1400));
-    setRescanning(false);
-    toast.success("Scan refreshed", {
-      id: "rescan",
-      description: "No new findings detected.",
-    });
-    onRescan?.();
-  };
-
-  const handleFalsePositive = () => {
-    setFpMarked(true);
-    toast.success("Marked as false positive", {
-      description: "Finding excluded from future scans.",
-    });
-    setTimeout(() => setFpMarked(false), 2000);
+  // Re-reads the persisted report. This deliberately does NOT claim the engines
+  // ran again: the previous implementation slept for 1400 ms and then toasted
+  // "Scan refreshed — No new findings detected." without re-running anything or
+  // even re-reading the database, which could not be true. A real re-scan is
+  // started from the dashboard, where the source file is available.
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    toast.loading("Refreshing report…", { id: "refresh" });
+    try {
+      await onRefresh();
+      toast.success("Report refreshed", {
+        id: "refresh",
+        description: "Re-read the latest persisted findings.",
+      });
+    } catch (err) {
+      toast.error("Could not refresh the report", {
+        id: "refresh",
+        description: err instanceof Error ? err.message : undefined,
+      });
+    } finally {
+      setRefreshing(false);
+    }
   };
 
   const handleDownload = async () => {
     setDownloading(true);
-    await new Promise((r) => setTimeout(r, 400));
     try {
       // H6: previous code created a text blob mislabeled as application/pdf —
       // a .pdf file no reader could open. createRemediationReportPdf builds a
@@ -89,29 +94,18 @@ export function WorkspaceActionBar({
         <Button
           size="sm"
           variant="ghost"
-          onClick={handleRescan}
-          disabled={rescanning}
-          aria-label="Re-run scan"
+          onClick={handleRefresh}
+          disabled={refreshing}
+          aria-label="Refresh scan report"
           className="gap-1.5 rounded-full"
         >
-          {rescanning ? (
+          {refreshing ? (
             <Loader2 className="h-3.5 w-3.5 animate-spin" />
           ) : (
             <RefreshCw className="h-3.5 w-3.5" />
           )}
-          <span className="hidden sm:inline">Re-run Scan</span>
-        </Button>
-
-        <Button
-          size="sm"
-          variant="ghost"
-          onClick={handleFalsePositive}
-          aria-label="Mark finding as false positive"
-          className={cn("gap-1.5 rounded-full", fpMarked && "text-low")}
-        >
-          <ShieldOff className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">
-            {fpMarked ? "Marked" : "False Positive"}
+            {refreshing ? "Refreshing…" : "Refresh"}
           </span>
         </Button>
 

@@ -5,6 +5,7 @@ import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { runLocalSAST } from "@/lib/sast-engine";
 import { buildSarifLog } from "@/lib/sarif";
 import { geminiApiRateLimiter } from "@/lib/rate-limiter";
+import { withEngineTiming } from "@/lib/telemetry/sentry";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -87,7 +88,7 @@ function normalizeVulns(raw: unknown): Array<{
 // and the report/SARIF pipeline downstream don't need to know which engine
 // (AST, heuristic, or Gemini) produced a given row.
 function normalizeLocalFindings(
-  findings: ReturnType<typeof runLocalSAST>,
+  findings: Awaited<ReturnType<typeof runLocalSAST>>,
   projectName: string,
 ): ReturnType<typeof normalizeVulns> {
   return findings.map((v) => ({
@@ -232,17 +233,20 @@ export const runScan = createServerFn({ method: "POST" })
       // JS/TS/JSX/TSX, heuristic pattern rules for everything else. Zero
       // latency, zero API cost, and it still runs if the AI engine is down.
       const localFindings = normalizeLocalFindings(
-        runLocalSAST(data.source_code, data.file_type),
+        await runLocalSAST(data.source_code, data.file_type),
         data.project_name,
       );
 
       // 2. AI engine for complex, contextual, business-logic vulnerabilities
-      // that structural analysis alone can't reason about.
-      const rawAiFindings = await callGemini(
-        data.project_name,
-        data.file_type,
-        data.source_code,
-        policies,
+      // that structural analysis alone can't reason about. Timed separately from
+      // the local pass so it's obvious which engine owns a latency regression.
+      const rawAiFindings = await withEngineTiming("gemini", () =>
+        callGemini(
+          data.project_name,
+          data.file_type,
+          data.source_code,
+          policies,
+        ),
       );
       const aiVulns = normalizeVulns(rawAiFindings);
 

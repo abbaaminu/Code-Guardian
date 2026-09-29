@@ -60,7 +60,8 @@ export interface ScanReportQueryResult {
   data: ScanReportQueryData | undefined;
   isLoading: boolean;
   isError: boolean;
-  refetch: () => void;
+  /** Re-reads the report from the server; resolves once the refetch settles. */
+  refetch: () => Promise<unknown>;
 }
 
 /** Full report for `/scans/$id` (scan row + findings). */

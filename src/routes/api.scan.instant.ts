@@ -74,7 +74,10 @@ export const Route = createFileRoute("/api/scan/instant")({
           );
         }
 
-        const findings = runLocalSAST(parsed.source_code, parsed.file_type);
+        const findings = await runLocalSAST(
+          parsed.source_code,
+          parsed.file_type,
+        );
         return new Response(
           JSON.stringify({
             findings,

@@ -5,18 +5,27 @@
 
 import { runAstSAST, isAstSupported, type LocalVuln } from "./ast-sast-engine";
 import { runHeuristicSAST } from "./heuristic-sast-engine";
+import { withEngineTiming } from "./telemetry/sentry";
 
 export type { LocalVuln } from "./ast-sast-engine";
 
-export function runLocalSAST(sourceCode: string, fileType = ""): LocalVuln[] {
+// Async because the AST engine lazily `import()`s the TypeScript compiler — see
+// the loading note in ast-sast-engine.ts for why the specifier has to stay
+// statically visible to the bundler.
+export async function runLocalSAST(
+  sourceCode: string,
+  fileType = "",
+): Promise<LocalVuln[]> {
   if (isAstSupported(fileType)) {
     try {
-      return runAstSAST(sourceCode, fileType);
+      return await withEngineTiming("ast", () =>
+        runAstSAST(sourceCode, fileType),
+      );
     } catch {
       // Malformed/partial source (e.g. a fragment pulled from a larger repo scan)
       // shouldn't take down the whole scan — fall back to heuristics for this file.
-      return runHeuristicSAST(sourceCode);
+      return withEngineTiming("heuristic", () => runHeuristicSAST(sourceCode));
     }
   }
-  return runHeuristicSAST(sourceCode);
+  return withEngineTiming("heuristic", () => runHeuristicSAST(sourceCode));
 }

@@ -2,6 +2,13 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { initTelemetry } from "./lib/telemetry/sentry";
+
+// Arm error reporting once, before the first request. error-capture.ts forwards
+// uncaught errors here through a dynamic import, and every telemetry export is a
+// no-op until this runs. Best-effort: a bad DSN logs and stays disabled rather
+// than failing server boot.
+initTelemetry();
 
 type ServerEntry = {
   fetch: (

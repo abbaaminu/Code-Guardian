@@ -51,6 +51,7 @@ export type Database = {
           id: string;
           owner: string;
           repo: string;
+          user_id: string;
         };
         Insert: {
           content: string;
@@ -61,6 +62,7 @@ export type Database = {
           id?: string;
           owner: string;
           repo: string;
+          user_id: string;
         };
         Update: {
           content?: string;
@@ -71,6 +73,7 @@ export type Database = {
           id?: string;
           owner?: string;
           repo?: string;
+          user_id?: string;
         };
         Relationships: [];
       };
@@ -256,7 +259,26 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
-      [_ in never]: never;
+      // Defined by supabase/migrations/0003_repo_embeddings.sql. `match_user_id`
+      // is optional in SQL but the agent always passes it: callers reach this
+      // through the service-role client (no end-user JWT), so RLS cannot scope
+      // the search for them and the parameter is what keeps one tenant's index
+      // from leaking into another tenant's agent context.
+      search_repo_context: {
+        Args: {
+          query_embedding: number[];
+          match_threshold: number;
+          match_count: number;
+          repo_owner: string;
+          repo_name: string;
+          match_user_id?: string;
+        };
+        Returns: {
+          file_path: string;
+          content: string;
+          similarity: number;
+        }[];
+      };
     };
     Enums: {
       scan_status: "queued" | "scanning" | "completed" | "failed";

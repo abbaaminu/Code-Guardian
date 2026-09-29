@@ -23,8 +23,42 @@
 // meaningful step up from regex and is a reasonable foundation to extend with
 // more sources/sinks/sanitizers over time.
 
-import ts from "typescript";
+import type * as tsTypes from "typescript";
 import type { Severity } from "./severity";
+
+/**
+ * TypeScript is a CommonJS-only package that references `__filename`
+ * internally, so it must never be inlined into an ESM server bundle (the
+ * generated CJS→ESM wrapper has no `__filename` binding and throws on import).
+ * It is also a ~9 MB module we don't want to pay for on every serverless cold
+ * start, so a top-level static import is out.
+ *
+ * Both constraints depend on the same thing: the bundler must be able to *see*
+ * the specifier. Vite's `ssr.external` and Nitro's dependency tracer only
+ * follow statically analyzable imports, and an opaque
+ * `createRequire(import.meta.url)("typescript")` call is invisible to them —
+ * which is exactly why production shipped either a broken inlined wrapper
+ * (`_libs/typescript.mjs`) or no `typescript` at all.
+ *
+ * A literal `import("typescript")` keeps the specifier visible (so Nitro traces
+ * the real package into the function's `node_modules`) while staying lazy (so
+ * the compiler is paid for only when a JS/TS/JSX/TSX file is actually scanned).
+ * Node then loads it with its own CJS loader, where `__filename` exists.
+ */
+type TypeScriptApi = typeof import("typescript");
+
+let tsApiPromise: Promise<TypeScriptApi> | null = null;
+
+function loadTypeScript(): Promise<TypeScriptApi> {
+  tsApiPromise ??= import("typescript").then((mod) => {
+    const namespace = mod as unknown as { default?: TypeScriptApi };
+    // Node hands CJS packages a `default` namespace member; other runners
+    // (vite-node, Vite's dev SSR transform) may expose the module shape
+    // directly. Accept either.
+    return namespace.default ?? (mod as unknown as TypeScriptApi);
+  });
+  return tsApiPromise;
+}
 
 export interface LocalVuln {
   title: string;
@@ -80,36 +114,74 @@ function severityOf(cwe: string): Severity {
   }
 }
 
-function scriptKindFor(fileType: string): ts.ScriptKind {
-  const ext = fileType.toLowerCase().replace(/^\./, "");
+function scriptKindFor(
+  ext: string,
+  ts: typeof import("typescript"),
+): tsTypes.ScriptKind {
   if (ext === "tsx") return ts.ScriptKind.TSX;
   if (ext === "jsx") return ts.ScriptKind.JSX;
   if (ext === "ts") return ts.ScriptKind.TS;
   return ts.ScriptKind.JSX; // permissive default so plain .js with JSX-ish content still parses
 }
 
-export function isAstSupported(fileType: string): boolean {
-  return ["js", "jsx", "ts", "tsx", "mjs", "cjs"].includes(
-    fileType.toLowerCase().replace(/^\./, ""),
-  );
+const AST_EXTENSIONS = new Set(["js", "jsx", "ts", "tsx", "mjs", "cjs"]);
+
+/**
+ * Spellings this project produces for a JS/TS file that aren't extensions.
+ *
+ * The dashboard sends a *language label* (`"TypeScript"`, `"JavaScript"`,
+ * `"Node.js"` — see LANGUAGES in dashboard-scan-form.tsx) while file uploads and
+ * the PR scanner send a raw extension (`"ts"`, `".tsx"`). Matching only
+ * extensions meant every dashboard JS/TS scan silently skipped the AST + taint
+ * engine and ran the regex heuristics instead, so the dataflow analysis this
+ * engine exists for never ran on the main input path.
+ *
+ * Both ambiguous labels map to the permissive JSX/TSX parse: TypeScript's TSX
+ * grammar accepts all of TypeScript except `<T>expr` angle-bracket assertions
+ * (which a scanner should not be reading as a type assertion anyway), and
+ * JavaScript's JSX grammar exists precisely so files full of markup or generics
+ * still parse instead of collapsing into error nodes that hide real findings.
+ */
+const AST_LANGUAGE_LABELS: Record<string, string> = {
+  javascript: "jsx",
+  node: "jsx",
+  "node.js": "jsx",
+  nodejs: "jsx",
+  typescript: "tsx",
+};
+
+/** Resolves any accepted spelling to a JS/TS extension, or null if not JS/TS. */
+function normalizeAstFileType(fileType: string): string | null {
+  const normalized = fileType.trim().toLowerCase().replace(/^\./, "");
+  if (AST_EXTENSIONS.has(normalized)) return normalized;
+  return AST_LANGUAGE_LABELS[normalized] ?? null;
 }
 
-export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
+export function isAstSupported(fileType: string): boolean {
+  return normalizeAstFileType(fileType) !== null;
+}
+
+export async function runAstSAST(
+  sourceCode: string,
+  fileType = "tsx",
+): Promise<LocalVuln[]> {
+  const ts = await loadTypeScript();
   const findings: LocalVuln[] = [];
+  const ext = normalizeAstFileType(fileType) ?? "tsx";
   const sourceFile = ts.createSourceFile(
-    `input.${fileType || "tsx"}`,
+    `input.${ext}`,
     sourceCode,
     ts.ScriptTarget.Latest,
     /* setParentNodes */ true,
-    scriptKindFor(fileType),
+    scriptKindFor(ext, ts),
   );
 
-  const lineOf = (node: ts.Node) =>
+  const lineOf = (node: tsTypes.Node) =>
     sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line +
     1;
-  const endLineOf = (node: ts.Node) =>
+  const endLineOf = (node: tsTypes.Node) =>
     sourceFile.getLineAndCharacterOfPosition(node.getEnd()).line + 1;
-  const textOf = (node: ts.Node) =>
+  const textOf = (node: tsTypes.Node) =>
     node.getText(sourceFile).trim().slice(0, 400);
 
   // --- Pass 1: tag locally-declared variables that are assigned from a
@@ -122,7 +194,7 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     return TAINT_SOURCE_PATTERNS.some((re) => re.test(text));
   }
 
-  function collectTaint(node: ts.Node) {
+  function collectTaint(node: tsTypes.Node) {
     if (
       ts.isVariableDeclaration(node) &&
       node.initializer &&
@@ -140,7 +212,7 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
   }
   collectTaint(sourceFile);
 
-  function expressionIsTainted(expr: ts.Expression): boolean {
+  function expressionIsTainted(expr: tsTypes.Expression): boolean {
     const text = textOf(expr);
     if (isTaintedExpressionText(text)) return true;
     if (ts.isIdentifier(expr) && taintedNames.has(expr.text)) return true;
@@ -162,8 +234,8 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     return false;
   }
 
-  function wrappedInSanitizer(expr: ts.Expression): boolean {
-    let cur: ts.Node | undefined = expr.parent;
+  function wrappedInSanitizer(expr: tsTypes.Expression): boolean {
+    let cur: tsTypes.Node | undefined = expr.parent;
     // walk up a couple of call layers looking for a sanitizer-named wrapper call
     for (let i = 0; i < 3 && cur; i++, cur = cur.parent) {
       if (
@@ -175,7 +247,7 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     return false;
   }
 
-  function calleeName(expr: ts.LeftHandSideExpression): string {
+  function calleeName(expr: tsTypes.LeftHandSideExpression): string {
     if (ts.isIdentifier(expr)) return expr.text;
     if (ts.isPropertyAccessExpression(expr)) return expr.name.text;
     return expr.getText(sourceFile);
@@ -186,7 +258,7 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
     return unquoted.length === 0 || PLACEHOLDER_VALUE.test(unquoted);
   }
 
-  function visit(node: ts.Node) {
+  function visit(node: tsTypes.Node) {
     // --- Hardcoded secret: `identifier/property = "literal"` where the name looks
     // like a credential and the value isn't an env-var reference / obvious placeholder.
     if (
@@ -332,8 +404,8 @@ export function runAstSAST(sourceCode: string, fileType = "tsx"): LocalVuln[] {
 
   function checkSecretAssignment(
     name: string,
-    valueExpr: ts.Expression,
-    reportNode: ts.Node,
+    valueExpr: tsTypes.Expression,
+    reportNode: tsTypes.Node,
   ) {
     if (!SECRET_NAME_HINT.test(name)) return;
     if (!ts.isStringLiteralLike(valueExpr)) return; // process.env.X etc. are fine

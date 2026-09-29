@@ -277,6 +277,7 @@ function ScanReport() {
           projectName={scan.project_name}
           appliedCount={appliedCount}
           totalFindings={vulns.length}
+          onRefresh={refetch}
         />
       </AppShell>
     </RequireAuth>

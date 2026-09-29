@@ -117,27 +117,33 @@ export async function postReviewComments(params: {
     comments.push({ path: f.filePath, position, body: formatFindingBody(f) });
   }
 
-  if (comments.length === 0) {
-    return { posted: 0, skipped };
-  }
+  const endpoint = `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`;
+  const headers = {
+    Authorization: `Bearer ${installationToken}`,
+    Accept: "application/vnd.github+json",
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
 
-  const res = await fetch(
-    `https://api.github.com/repos/${owner}/${repo}/pulls/${pullNumber}/reviews`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${installationToken}`,
-        Accept: "application/vnd.github+json",
-        "X-GitHub-Api-Version": "2022-11-28",
-      },
-      body: JSON.stringify({
-        commit_id: commitSha,
-        event: "COMMENT",
-        body: `SecurePulse found ${findings.length} issue(s) in this PR (${comments.length} anchored inline, ${skipped} summarized only).`,
-        comments,
-      }),
-    },
-  );
+  // Every finding may fall outside the diff's context window (e.g. a pre-existing
+  // issue on an untouched line, which is common when a PR only reformats a
+  // file). A review is still submitted with an empty comment list so the summary
+  // reaches the PR: returning early would make a scan that found real problems
+  // indistinguishable from a clean one.
+  const reviewBody =
+    comments.length === 0
+      ? `SecurePulse found ${findings.length} issue(s) in this PR, none on lines changed by this diff. Run a full scan from the dashboard to see them in context.`
+      : `SecurePulse found ${findings.length} issue(s) in this PR (${comments.length} anchored inline, ${skipped} summarized only).`;
+
+  const res = await fetch(endpoint, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      commit_id: commitSha,
+      event: "COMMENT",
+      body: reviewBody,
+      comments,
+    }),
+  });
 
   if (!res.ok) {
     const body = await res.text();

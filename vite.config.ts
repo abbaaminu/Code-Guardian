@@ -49,7 +49,7 @@ export default defineConfig(({ mode }) => {
         importProtection: {
           behavior: "error",
           client: {
-            files: ["**/server/**"],
+            files: ["**/server/**", "**/ast-sast-engine.ts"],
             specifiers: ["server-only"],
           },
         },
@@ -67,8 +67,12 @@ export default defineConfig(({ mode }) => {
       react(),
       nitro({
         preset: process.env.VERCEL ? "vercel" : "node-server",
+        traceDeps: ["typescript"],
       }),
     ],
+    ssr: {
+      external: ["typescript"],
+    },
     // Vite 8+ resolves tsconfig paths natively, so no extra plugin is needed
     // for the `@/*` alias (see tsconfig.json "paths").
     resolve: {
