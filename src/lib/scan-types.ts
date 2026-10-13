@@ -47,7 +47,7 @@ export interface ScanReport {
 export interface Policy {
   id: string;
   name: string;
-  description: string;
+  description: string | null;
   category: string;
   enabled: boolean;
 }

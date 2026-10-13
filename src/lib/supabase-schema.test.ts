@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 
 // Regression guard for the SQL in supabase/ — the schema is the one part of this
 // app that TypeScript cannot check. src/integrations/supabase/types.ts is
-// hand-maintained and already disagrees with the live database in places, so a
-// missing column or a missing RLS policy shows up as a runtime PostgREST error
+// maintained alongside the migrations, so a missing column or a missing RLS
+// policy shows up as a runtime PostgREST error
 // (`column scans.file_type does not exist`, `new row violates row-level security
 // policy`) rather than a compile error.
 //

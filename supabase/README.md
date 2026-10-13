@@ -6,6 +6,7 @@
 | `migrations/0004_reconcile_live_drift.sql` | Reconciles the live database with the code — see below. Idempotent; safe to re-run.                                                                                                                                      |
 | `diagnostics/live-schema-audit.sql`        | **Read-only.** Prints one table of what is actually in the database: columns, RLS state, constraints, indexes, policies, the RPC overloads, and every app-required column that is missing. Run it before and after 0004. |
 | `../src/lib/supabase-schema.test.ts`       | Static guard that the SQL in this directory still provides every column, key and policy the code in `src/lib` uses.                                                                                                      |
+| `../src/integrations/supabase/types.ts`    | Supabase client row/insert/update contracts. Keep aligned with the migrations and run `npx tsc --noEmit` after schema changes.                                                                                           |
 
 ## Why there is a "drift" migration
 

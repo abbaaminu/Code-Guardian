@@ -37,7 +37,7 @@ export function useScansQuery(
     queryFn: async () => {
       try {
         const res = await list();
-        return (res || []) as ScanSummary[];
+        return res ?? [];
       } catch (err) {
         console.warn(
           "Failed to fetch remote scan list, returning empty array:",
@@ -72,10 +72,8 @@ export function useScanReportQuery(scanId: string): ScanReportQueryResult {
     queryFn: async () => {
       const res = await fetchReport({ data: { id: scanId } });
       return {
-        // The server fn returns Supabase row shapes (loosely typed); bridge the
-        // boundary once here so route components consume the typed contracts.
-        scan: res.scan as unknown as ScanReport,
-        vulns: res.vulns as unknown as ScanVulnerability[],
+        scan: res.scan,
+        vulns: res.vulns,
       };
     },
   });
@@ -97,7 +95,7 @@ export function usePoliciesQuery(
     queryFn: async () => {
       try {
         const res = await listFn();
-        return (res || []) as Policy[];
+        return res ?? [];
       } catch (err) {
         console.warn(
           "Failed to fetch remote policy list, returning empty array:",

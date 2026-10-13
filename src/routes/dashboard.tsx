@@ -53,7 +53,7 @@ export const Route = createFileRoute("/dashboard")({
     if (import.meta.env.SSR) return { scans: [] };
     try {
       const res = await listScans();
-      return { scans: (res || []) as ScanSummary[] };
+      return { scans: res ?? [] };
     } catch (err) {
       console.warn(
         "Failed to preload scan list, deferring to client fetch:",

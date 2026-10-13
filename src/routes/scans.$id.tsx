@@ -16,6 +16,7 @@ import { useScanReportQuery } from "@/hooks/use-scan-queries";
 import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import { SEVERITIES } from "@/lib/severity";
+import { applyVulnerabilityPatch } from "@/lib/scan-patch";
 import { z } from "zod";
 
 export interface ScanReportLoaderData {
@@ -70,7 +71,12 @@ function ScanReport() {
   const { scanId } = Route.useLoaderData();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
-  const [patchedLines, setPatchedLines] = useState<Set<number>>(new Set());
+  const [appliedPatches, setAppliedPatches] = useState<
+    Record<
+      string,
+      { startLine: number; endLine: number; replacementLineCount: number }
+    >
+  >({});
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const [liveCode, setLiveCode] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -79,15 +85,64 @@ function ScanReport() {
 
   const highlights = useMemo(() => {
     if (!data) return [];
-    return data.vulns
-      .filter((v) => v.line_start && v.line_end)
-      .map((v) => ({
-        start: v.line_start!,
-        end: v.line_end!,
-        severity: v.severity,
-        vulnId: v.id,
-      }));
-  }, [data]);
+    return data.vulns.flatMap((v) => {
+      if (!v.line_start || !v.line_end) return [];
+
+      const ownPatch = appliedPatches[v.id];
+      const overlappingPatch = Object.entries(appliedPatches).some(
+        ([id, patch]) =>
+          id !== v.id &&
+          patch.startLine <= v.line_end! &&
+          patch.endLine >= v.line_start!,
+      );
+      if (overlappingPatch) return [];
+
+      const precedingPatches = Object.entries(appliedPatches)
+        .filter(([id, patch]) => id !== v.id && patch.endLine < v.line_start!)
+        .reduce(
+          (lines, [, patch]) =>
+            lines +
+            patch.replacementLineCount -
+            (patch.endLine - patch.startLine + 1),
+          0,
+        );
+      const start = v.line_start + precedingPatches;
+      return [
+        {
+          start,
+          end: ownPatch
+            ? start + ownPatch.replacementLineCount - 1
+            : v.line_end + precedingPatches,
+          severity: v.severity,
+          vulnId: v.id,
+        },
+      ];
+    });
+  }, [appliedPatches, data]);
+
+  const patchedLines = useMemo(() => {
+    const lines = new Set<number>();
+    for (const patch of Object.values(appliedPatches)) {
+      const precedingPatches = Object.values(appliedPatches)
+        .filter((other) => other !== patch && other.endLine < patch.startLine)
+        .reduce(
+          (count, other) =>
+            count +
+            other.replacementLineCount -
+            (other.endLine - other.startLine + 1),
+          0,
+        );
+      const start = patch.startLine + precedingPatches;
+      for (
+        let line = start;
+        line < start + patch.replacementLineCount;
+        line++
+      ) {
+        lines.add(line);
+      }
+    }
+    return lines;
+  }, [appliedPatches]);
 
   if (isLoading || !data) {
     // Keep the shell frame consistent while the report loads; hard failures get
@@ -141,16 +196,69 @@ function ScanReport() {
 
   const handleApply = (v: VulnCardData) => {
     if (!v.line_start || !v.line_end) {
-      toast.error("No line range for this finding");
+      toast.error("Patch not applied", {
+        description: "No valid line range is available for this finding.",
+      });
       return;
     }
-    const lines = new Set<number>();
-    for (let i = v.line_start; i <= v.line_end; i++) lines.add(i);
-    setPatchedLines((prev) => new Set([...prev, ...lines]));
-    setFlashLines(lines);
+
+    if (
+      Object.values(appliedPatches).some(
+        (patch) =>
+          patch.startLine <= v.line_end! && patch.endLine >= v.line_start!,
+      )
+    ) {
+      toast.error("Patch not applied", {
+        description:
+          "This finding overlaps a patch already applied. Start again from the original source to avoid overwriting changes.",
+      });
+      return;
+    }
+
+    const precedingPatches = Object.values(appliedPatches)
+      .filter((patch) => patch.endLine < v.line_start!)
+      .reduce(
+        (lines, patch) =>
+          lines +
+          patch.replacementLineCount -
+          (patch.endLine - patch.startLine + 1),
+        0,
+      );
+    const startLine = v.line_start + precedingPatches;
+    const endLine = v.line_end + precedingPatches;
+    const result = applyVulnerabilityPatch(
+      displayedCode,
+      v.vulnerable_code_block,
+      v.fixed_code_block,
+      startLine,
+      endLine,
+    );
+    if (!result.success) {
+      toast.error("Patch not applied", { description: result.reason });
+      return;
+    }
+
+    setLiveCode(result.code);
+    setAppliedPatches((prev) => ({
+      ...prev,
+      [v.id]: {
+        startLine: v.line_start!,
+        endLine: v.line_end!,
+        replacementLineCount: result.replacementLineCount,
+      },
+    }));
     setApplied((prev) => ({ ...prev, [v.id]: true }));
-    toast.success("Patch applied", {
-      description: `Lines ${v.line_start}-${v.line_end} secured`,
+    const flash = new Set<number>();
+    for (
+      let line = startLine;
+      line < startLine + result.replacementLineCount;
+      line++
+    ) {
+      flash.add(line);
+    }
+    setFlashLines(flash);
+    toast.success("Patch applied to displayed source", {
+      description: `Replaced the exact vulnerable snippet at lines ${startLine}-${endLine}.`,
     });
     setTimeout(() => setFlashLines(new Set()), 1500);
   };
@@ -190,7 +298,8 @@ function ScanReport() {
               fileType={scan.file_type}
               onApplyCode={(code) => {
                 setLiveCode(code);
-                setPatchedLines(new Set());
+                setApplied({});
+                setAppliedPatches({});
                 setFlashLines(new Set());
               }}
             />

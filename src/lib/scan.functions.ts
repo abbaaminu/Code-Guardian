@@ -264,7 +264,7 @@ export const runScan = createServerFn({ method: "POST" })
         }
       }
 
-      await supabase
+      const { error: completionError } = await supabase
         .from("scans")
         .update({
           status: "completed",
@@ -272,13 +272,31 @@ export const runScan = createServerFn({ method: "POST" })
           vulnerabilities_count: counts,
         })
         .eq("id", created.id);
+      if (completionError) {
+        throw new Error(
+          `Failed to persist scan completion status: ${completionError.message}`,
+        );
+      }
 
       return { id: created.id, health_score: health, counts };
     } catch (err) {
-      await supabase
-        .from("scans")
-        .update({ status: "failed" })
-        .eq("id", created.id);
+      try {
+        const { error: failureStatusError } = await supabase
+          .from("scans")
+          .update({ status: "failed" })
+          .eq("id", created.id);
+        if (failureStatusError) {
+          console.error(
+            `[scan] Failed to persist failed status for scan ${created.id}:`,
+            failureStatusError,
+          );
+        }
+      } catch (failureStatusError) {
+        console.error(
+          `[scan] Failed to persist failed status for scan ${created.id}:`,
+          failureStatusError,
+        );
+      }
       throw err;
     }
   });

@@ -74,25 +74,10 @@ function ghHeaders(token: string) {
   };
 }
 
-/**
- * Resolves the GitHub token that actually runs this task. It is never accepted
- * from the client: the per-user encrypted vault (if the user saved a PAT) takes
- * precedence, then a server-configured bot token falls back for deployments
- * that use a single automation account.
- */
-async function resolveGithubToken(userId: string): Promise<string | null> {
-  try {
-    const { getDecryptedRepoTokenServerOnly } =
-      await import("@/lib/vault/vault.functions");
-    const vaultToken = await getDecryptedRepoTokenServerOnly(userId, "github");
-    if (vaultToken) return vaultToken;
-  } catch (err) {
-    console.warn("[agent] Could not load GitHub token from vault:", err);
-  }
-  // M3: the env fallback lives in a server-only module so the raw
-  // process.env.GITHUB_TOKEN read never ships toward the client bundle.
-  const { getGithubToken } = await import("@/lib/github/token.server");
-  return getGithubToken();
+async function getUserGithubToken(userId: string): Promise<string | null> {
+  const { getDecryptedRepoTokenServerOnly } =
+    await import("@/lib/vault/vault.functions");
+  return getDecryptedRepoTokenServerOnly(userId, "github");
 }
 
 // ==========================================
@@ -308,8 +293,8 @@ export async function triggerValidationWorkflow(
  * Security posture:
  *  - Requires a signed-in Supabase user (middleware) — the agent mutates real
  *    repos, so this is not an anonymous endpoint.
- *  - The GitHub token is resolved server-side (encrypted vault -> GITHUB_TOKEN);
- *    the client can never inject one.
+ *  - Repository writes require the caller's own encrypted vault token; the
+ *    deployment-wide GITHUB_TOKEN is never used for caller-selected repositories.
  *  - Every AI-proposed edit passes `validateAgentEdits` before any blob/tree/ref
  *    is created (H1).
  *  - Gemini calls are per-user rate limited alongside runScan/copilotRemediate
@@ -319,6 +304,13 @@ export const runAgentTask = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => AgentTaskInputSchema.parse(input))
   .handler(async ({ data, context }) => {
+    const githubToken = await getUserGithubToken(context.userId);
+    if (!githubToken) {
+      throw new Error(
+        "A personal GitHub token is required to create a branch or pull request. Save one in your token vault; the deployment GITHUB_TOKEN is not used for repository writes.",
+      );
+    }
+
     const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       throw new Error("GOOGLE_API_KEY environment variable is not configured.");
@@ -334,13 +326,6 @@ export const runAgentTask = createServerFn({ method: "POST" })
     const { supabaseAdmin } =
       await import("@/integrations/supabase/client.server");
     const supabase = supabaseAdmin;
-
-    const githubToken = await resolveGithubToken(context.userId);
-    if (!githubToken) {
-      throw new Error(
-        "No GitHub token configured. Save one in the token vault or set the GITHUB_TOKEN environment variable.",
-      );
-    }
 
     // Step 1: Retrieve semantic context from Supabase pgvector store
     const contextFiles = await retrieveRepoContext(

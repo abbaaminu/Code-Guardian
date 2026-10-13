@@ -24,7 +24,7 @@ export default defineConfig(({ mode }) => {
     //
     // TanStack Start's router plugin code-splits every route into its own
     // lazy-loaded chunk (via `lazyRouteComponent` dynamic imports). We split
-      // each route's component tree, error boundary, not-found view, and pending
+    // each route's component tree, error boundary, not-found view, and pending
     // fallback so they load on demand instead of shipping in the initial
     // bundle. See the build output: each route emits a small route-definition
     // chunk plus a lazily-imported component chunk.

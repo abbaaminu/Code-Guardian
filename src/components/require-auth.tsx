@@ -10,19 +10,37 @@ export function RequireAuth({ children }: { children: ReactNode }) {
   const [authed, setAuthed] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => {
-      if (!data.session) {
+    let mounted = true;
+
+    void supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) throw error;
+        if (!mounted) return;
+
+        if (!data.session) {
+          navigate({ to: "/login" });
+        } else {
+          setAuthed(true);
+        }
+      })
+      .catch((error: unknown) => {
+        console.error("[auth] Failed to check the current session:", error);
+        if (!mounted) return;
+
         navigate({ to: "/login" });
-      } else {
-        setAuthed(true);
-      }
-      setChecked(true);
-    });
+      })
+      .finally(() => {
+        if (mounted) setChecked(true);
+      });
 
     const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
       if (!session) navigate({ to: "/login" });
     });
-    return () => sub.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, [navigate]);
 
   if (!checked) {

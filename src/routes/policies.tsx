@@ -118,7 +118,7 @@ function Policies() {
     return policies.filter(
       (p) =>
         p.name.toLowerCase().includes(q) ||
-        p.description.toLowerCase().includes(q) ||
+        (p.description ?? "").toLowerCase().includes(q) ||
         p.category.toLowerCase().includes(q),
     );
   }, [policies, query]);

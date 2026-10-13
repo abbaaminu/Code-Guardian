@@ -268,15 +268,50 @@ $sev$;
 -- readable forever under RLS (the policy's EXISTS subquery cannot match a
 -- missing scan, so they are invisible rather than exposed — they just leak disk).
 do $vk$
+declare
+  existing_fk record;
+  scan_id_attnum smallint;
+  scans_id_attnum smallint;
 begin
+  select attnum into scan_id_attnum
+  from pg_attribute
+  where attrelid = 'public.vulnerabilities'::regclass
+    and attname = 'scan_id'
+    and not attisdropped;
+
+  select attnum into scans_id_attnum
+  from pg_attribute
+  where attrelid = 'public.scans'::regclass
+    and attname = 'id'
+    and not attisdropped;
+
+  for existing_fk in
+    select conname
+    from pg_constraint
+    where conrelid = 'public.vulnerabilities'::regclass
+      and contype = 'f'
+      and conkey = array[scan_id_attnum]
+      and not (
+        confrelid = 'public.scans'::regclass
+        and confkey = array[scans_id_attnum]
+        and confdeltype = 'c'
+      )
+  loop
+    execute format(
+      'alter table public.vulnerabilities drop constraint %I',
+      existing_fk.conname
+    );
+  end loop;
+
   if not exists (
-    select 1 from pg_constraint con
+    select 1
+    from pg_constraint con
     where con.conrelid = 'public.vulnerabilities'::regclass
       and con.contype = 'f'
-      and con.conkey = array[
-        (select attnum from pg_attribute
-          where attrelid = 'public.vulnerabilities'::regclass and attname = 'scan_id')
-      ]
+      and con.conkey = array[scan_id_attnum]
+      and con.confrelid = 'public.scans'::regclass
+      and con.confkey = array[scans_id_attnum]
+      and con.confdeltype = 'c'
   ) then
     alter table public.vulnerabilities
       add constraint vulnerabilities_scan_id_fkey

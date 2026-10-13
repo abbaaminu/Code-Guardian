@@ -20,6 +20,7 @@ dist/
 # Test / coverage
 coverage/
 playwright-report/
+test-results/
 
 # Editor / OS
 .DS_Store
@@ -28,4 +29,3 @@ playwright-report/
 .vscode/*
 !.vscode/extensions.json
 .idea/
-
