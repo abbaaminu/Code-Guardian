@@ -37,22 +37,49 @@ function createSupabaseFetch(supabaseKey: string): typeof fetch {
 }
 
 function createSupabaseAdminClient() {
-  const SUPABASE_URL = process.env.SUPABASE_URL;
-  const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
+  const supabaseKey =
+    process.env.SUPABASE_PUBLISHABLE_KEY || process.env.VITE_SUPABASE_ANON_KEY;
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const clientKey = serviceRoleKey || supabaseKey;
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!process.env.SUPABASE_URL && process.env.VITE_SUPABASE_URL) {
+    console.warn(
+      "[Supabase] SUPABASE_URL is not set; falling back to VITE_SUPABASE_URL.",
+    );
+  }
+  if (
+    !process.env.SUPABASE_PUBLISHABLE_KEY &&
+    process.env.VITE_SUPABASE_ANON_KEY
+  ) {
+    console.warn(
+      "[Supabase] SUPABASE_PUBLISHABLE_KEY is not set; falling back to VITE_SUPABASE_ANON_KEY.",
+    );
+  }
+
+  if (!supabaseUrl || !clientKey) {
     const missing = [
-      ...(!SUPABASE_URL ? ["SUPABASE_URL"] : []),
-      ...(!SUPABASE_SERVICE_ROLE_KEY ? ["SUPABASE_SERVICE_ROLE_KEY"] : []),
+      ...(!supabaseUrl ? ["SUPABASE_URL or VITE_SUPABASE_URL"] : []),
+      ...(!clientKey
+        ? [
+            "SUPABASE_SERVICE_ROLE_KEY, SUPABASE_PUBLISHABLE_KEY, or VITE_SUPABASE_ANON_KEY",
+          ]
+        : []),
     ];
-    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in the server environment (see .env.example).`;
+    const message = `Missing Supabase environment variable(s): ${missing.join(", ")}. Set the required values in the server environment (see .env.example).`;
     console.error(`[Supabase] ${message}`);
     throw new Error(message);
   }
 
-  return createClient<Database>(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+  if (!serviceRoleKey) {
+    console.warn(
+      "[Supabase] SUPABASE_SERVICE_ROLE_KEY is not set; using a publishable key. Server-side database operations will remain subject to Row Level Security.",
+    );
+  }
+
+  return createClient<Database>(supabaseUrl, clientKey, {
     global: {
-      fetch: createSupabaseFetch(SUPABASE_SERVICE_ROLE_KEY),
+      fetch: createSupabaseFetch(clientKey),
     },
     auth: {
       storage: undefined,

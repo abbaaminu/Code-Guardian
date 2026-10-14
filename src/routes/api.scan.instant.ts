@@ -28,14 +28,21 @@ const InstantScanInput = z.object({
   source_code: z.string().min(1).max(200_000),
 });
 
+function jsonError(message: string, status: number): Response {
+  return new Response(JSON.stringify({ error: message }), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 async function requireBearerUser(request: Request): Promise<string> {
   const authHeader = request.headers.get("authorization");
   if (!authHeader?.startsWith("Bearer ")) {
-    throw new Response("Unauthorized: missing bearer token", { status: 401 });
+    throw jsonError("Unauthorized: missing bearer token", 401);
   }
   const token = authHeader.slice("Bearer ".length);
   if (token.split(".").length !== 3) {
-    throw new Response("Unauthorized: invalid token", { status: 401 });
+    throw jsonError("Unauthorized: invalid token", 401);
   }
 
   // M4/M5: reuse the auth middleware's single shared Supabase client for JWT
@@ -45,8 +52,17 @@ async function requireBearerUser(request: Request): Promise<string> {
   try {
     const { userId } = await verifySupabaseToken(token);
     return userId;
-  } catch {
-    throw new Response("Unauthorized: invalid token", { status: 401 });
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      error.message.startsWith("Missing Supabase environment variable(s):")
+    ) {
+      throw jsonError(
+        "Authentication is temporarily unavailable because the server's Supabase configuration is incomplete.",
+        503,
+      );
+    }
+    throw jsonError("Unauthorized: invalid token", 401);
   }
 }
 
@@ -58,35 +74,38 @@ export const Route = createFileRoute("/api/scan/instant")({
           await requireBearerUser(request);
         } catch (res) {
           if (res instanceof Response) return res;
-          throw res;
+          console.error(
+            "[instant scan] Authentication failed unexpectedly:",
+            res,
+          );
+          return jsonError("Authentication failed unexpectedly.", 500);
         }
 
         let parsed: z.infer<typeof InstantScanInput>;
         try {
           parsed = InstantScanInput.parse(await request.json());
         } catch {
-          return new Response(
-            JSON.stringify({ error: "Invalid request body" }),
-            {
-              status: 400,
-              headers: { "content-type": "application/json" },
-            },
-          );
+          return jsonError("Invalid request body", 400);
         }
 
-        const findings = await runLocalSAST(
-          parsed.source_code,
-          parsed.file_type,
-        );
-        return new Response(
-          JSON.stringify({
-            findings,
-            engine: findings.some((f) => f.engine === "ast")
-              ? "ast"
-              : "heuristic",
-          }),
-          { headers: { "content-type": "application/json" } },
-        );
+        try {
+          const findings = await runLocalSAST(
+            parsed.source_code,
+            parsed.file_type,
+          );
+          return new Response(
+            JSON.stringify({
+              findings,
+              engine: findings.some((f) => f.engine === "ast")
+                ? "ast"
+                : "heuristic",
+            }),
+            { headers: { "content-type": "application/json" } },
+          );
+        } catch (error) {
+          console.error("[instant scan] Scan failed:", error);
+          return jsonError("Instant scan failed. Please try again.", 500);
+        }
       },
     },
   },

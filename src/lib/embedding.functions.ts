@@ -134,7 +134,8 @@ export const indexRepository = createServerFn({ method: "POST" })
     // Per-user PAT (encrypted vault) first, so private repositories and the
     // user's own GitHub rate limit are used; the bot token is the fallback for
     // deployments that only have a single automation account.
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey =
+      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
     let token = getGithubToken();
     try {
       const { getDecryptedRepoTokenServerOnly } =
@@ -146,7 +147,9 @@ export const indexRepository = createServerFn({ method: "POST" })
     }
 
     if (!apiKey) {
-      throw new Error("GOOGLE_API_KEY environment variable is not configured.");
+      throw new Error(
+        "Repository indexing AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+      );
     }
     if (!token) {
       throw new Error(
@@ -182,7 +185,7 @@ export const indexRepository = createServerFn({ method: "POST" })
     }> = [];
     for (const file of files) {
       const embedRes = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${apiKey}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${encodeURIComponent(apiKey)}`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -195,7 +198,19 @@ export const indexRepository = createServerFn({ method: "POST" })
         },
       );
 
-      if (!embedRes.ok) continue; // Skip on failure, or handle retries in production
+      if (!embedRes.ok) {
+        const responseBody = await embedRes.text();
+        if (
+          embedRes.status === 401 ||
+          embedRes.status === 403 ||
+          responseBody.includes("API_KEY_INVALID")
+        ) {
+          throw new Error(
+            `Gemini rejected the configured API key (HTTP ${embedRes.status}). Check GOOGLE_API_KEY.`,
+          );
+        }
+        continue;
+      }
       const embedData = (await embedRes.json()) as {
         embedding?: { values?: number[] };
       };

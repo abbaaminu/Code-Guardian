@@ -104,6 +104,15 @@ async function getInstructionEmbedding(
 
   if (!res.ok) {
     const errText = await res.text();
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      errText.includes("API_KEY_INVALID")
+    ) {
+      throw new Error(
+        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
+      );
+    }
     throw new Error(`Failed to generate embedding for instruction: ${errText}`);
   }
 
@@ -211,7 +220,19 @@ Do NOT wrap the response in markdown code blocks (\`\`\`). Return JSON text only
   });
 
   if (!res.ok) {
-    throw new Error(`AI Agent Planner failed with status ${res.status}`);
+    const responseBody = await res.text();
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      responseBody.includes("API_KEY_INVALID")
+    ) {
+      throw new Error(
+        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
+      );
+    }
+    throw new Error(
+      `AI Agent Planner failed with status ${res.status}: ${responseBody.slice(0, 300)}`,
+    );
   }
 
   const payload = (await res.json()) as {
@@ -311,9 +332,12 @@ export const runAgentTask = createServerFn({ method: "POST" })
       );
     }
 
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey =
+      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
     if (!apiKey) {
-      throw new Error("GOOGLE_API_KEY environment variable is not configured.");
+      throw new Error(
+        "Agent AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+      );
     }
 
     // Per-user rate limit: this task makes paid Gemini calls (embedding + plan).

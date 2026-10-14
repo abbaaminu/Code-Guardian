@@ -133,9 +133,11 @@ async function callGemini(
   code: string,
   policies: string[],
 ): Promise<unknown[]> {
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
   if (!apiKey)
-    throw new Error("Security audit AI engine is temporarily unconfigured.");
+    throw new Error(
+      "Security audit AI engine is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+    );
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
   const systemPrompt = `You are SecurePulse, an enterprise, non-training-tier code security auditor.
@@ -174,6 +176,15 @@ ${code}
     const body = await res.text();
     if (res.status === 429)
       throw new Error("Rate limit hit — please retry in a moment.");
+    if (
+      res.status === 401 ||
+      res.status === 403 ||
+      body.includes("API_KEY_INVALID")
+    ) {
+      throw new Error(
+        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
+      );
+    }
     throw new Error(`Gemini API error [${res.status}]: ${body.slice(0, 300)}`);
   }
 
@@ -437,8 +448,13 @@ export const copilotRemediate = createServerFn({ method: "POST" })
       );
     }
 
-    const apiKey = process.env.GOOGLE_API_KEY;
-    if (!apiKey) throw new Error("Missing GOOGLE_API_KEY");
+    const apiKey =
+      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+    if (!apiKey) {
+      throw new Error(
+        "Copilot AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+      );
+    }
 
     const systemPrompt = `You are SecurePulse Remediation Copilot. Rewrite the user's code per their instruction, prioritizing security best practices.
 
@@ -474,6 +490,15 @@ ${data.source_code}
       const body = await res.text();
       if (res.status === 429)
         throw new Error("Rate limit hit — please retry in a moment.");
+      if (
+        res.status === 401 ||
+        res.status === 403 ||
+        body.includes("API_KEY_INVALID")
+      ) {
+        throw new Error(
+          `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
+        );
+      }
       throw new Error(
         `Copilot API error [${res.status}]: ${body.slice(0, 300)}`,
       );
