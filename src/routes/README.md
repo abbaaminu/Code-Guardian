@@ -18,4 +18,9 @@ is `src/routes/__root.tsx`.
 | `_layout.tsx`            | layout route (renders children via `<Outlet />`)        |
 | `__root.tsx`             | app shell — wraps every page; preserve `<Outlet />`     |
 
+The Paddle billing webhook is `api.webhooks.paddle.ts` and receives signed
+subscription events at `/api/webhooks/paddle`. Configure
+`PADDLE_WEBHOOK_SECRET` and the monthly Starter/Pro price IDs in the server
+environment.
+
 `routeTree.gen.ts` is auto-generated. Don't edit it by hand.

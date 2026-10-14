@@ -123,6 +123,84 @@ export type Database = {
         };
         Relationships: [];
       };
+      usage_quotas: {
+        Row: {
+          user_id: string;
+          audit_credits_remaining: number;
+          tier: "free" | "starter" | "pro";
+          billing_period_start: string;
+          current_period_audits_used: number;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          audit_credits_remaining?: number;
+          tier?: "free" | "starter" | "pro";
+          billing_period_start?: string;
+          current_period_audits_used?: number;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          audit_credits_remaining?: number;
+          tier?: "free" | "starter" | "pro";
+          billing_period_start?: string;
+          current_period_audits_used?: number;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      paddle_subscriptions: {
+        Row: {
+          paddle_subscription_id: string;
+          user_id: string;
+          paddle_customer_id: string | null;
+          paddle_price_id: string;
+          tier: "starter" | "pro";
+          status: string;
+          current_period_start: string | null;
+          last_event_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          paddle_subscription_id: string;
+          user_id: string;
+          paddle_customer_id?: string | null;
+          paddle_price_id: string;
+          tier: "starter" | "pro";
+          status: string;
+          current_period_start?: string | null;
+          last_event_at: string;
+          updated_at?: string;
+        };
+        Update: {
+          paddle_subscription_id?: string;
+          user_id?: string;
+          paddle_customer_id?: string | null;
+          paddle_price_id?: string;
+          tier?: "starter" | "pro";
+          status?: string;
+          current_period_start?: string | null;
+          last_event_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
+      webhook_events: {
+        Row: {
+          event_id: string;
+          processed_at: string;
+        };
+        Insert: {
+          event_id: string;
+          processed_at?: string;
+        };
+        Update: {
+          event_id?: string;
+          processed_at?: string;
+        };
+        Relationships: [];
+      };
       user_roles: {
         Row: {
           user_id: string;
@@ -241,6 +319,29 @@ export type Database = {
       [_ in never]: never;
     };
     Functions: {
+      increment_audit_usage: {
+        Args: { p_user_id: string };
+        Returns: { success: boolean; remaining: number };
+      };
+      get_audit_quota: {
+        Args: { p_user_id: string };
+        Returns: { tier: "free" | "starter" | "pro"; remaining: number };
+      };
+      apply_paddle_subscription_event: {
+        Args: {
+          p_event_id: string;
+          p_event_type: string;
+          p_user_id: string | null;
+          p_subscription_id: string;
+          p_customer_id: string | null;
+          p_price_id: string | null;
+          p_tier: "starter" | "pro" | null;
+          p_status: string;
+          p_period_start: string | null;
+          p_occurred_at: string;
+        };
+        Returns: boolean;
+      };
       search_repo_context: {
         Args: {
           query_embedding: number[];

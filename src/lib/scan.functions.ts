@@ -205,6 +205,18 @@ export const runScan = createServerFn({ method: "POST" })
     }
 
     const supabase = await serverSupabase();
+    const { data: usage, error: usageError } = await supabase.rpc(
+      "increment_audit_usage",
+      { p_user_id: context.userId },
+    );
+    if (usageError) {
+      throw new Error(`Unable to check audit quota: ${usageError.message}`);
+    }
+    if (!usage || !usage.success) {
+      throw new Error(
+        "AUDIT_QUOTA_EXCEEDED: You have used all available audits for your plan.",
+      );
+    }
 
     // Load enabled policies to steer the scan.
     const { data: policyRows } = await supabase
@@ -278,7 +290,12 @@ export const runScan = createServerFn({ method: "POST" })
         );
       }
 
-      return { id: created.id, health_score: health, counts };
+      return {
+        id: created.id,
+        health_score: health,
+        counts,
+        quota_remaining: usage.remaining,
+      };
     } catch (err) {
       try {
         const { error: failureStatusError } = await supabase

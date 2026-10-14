@@ -4,6 +4,8 @@
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `migrations/0001..0003`                    | Multi-tenancy + RLS + vault (0001), admin roles (0002), repo embeddings + the `search_repo_context` RPC (0003).                                                                                                          |
 | `migrations/0004_reconcile_live_drift.sql` | Reconciles the live database with the code — see below. Idempotent; safe to re-run.                                                                                                                                      |
+| `migrations/0005_saas_metering_and_paddle.sql` | Adds signup trial credits, atomic audit quotas, subscription state, and Paddle webhook RPCs.                                                                                                                         |
+| `migrations/0006_atomic_quota_and_webhook_events.sql` | Returns authoritative quota JSON and transactionally claims Paddle webhook event IDs.                                                                                                                        |
 | `diagnostics/live-schema-audit.sql`        | **Read-only.** Prints one table of what is actually in the database: columns, RLS state, constraints, indexes, policies, the RPC overloads, and every app-required column that is missing. Run it before and after 0004. |
 | `../src/lib/supabase-schema.test.ts`       | Static guard that the SQL in this directory still provides every column, key and policy the code in `src/lib` uses.                                                                                                      |
 | `../src/integrations/supabase/types.ts`    | Supabase client row/insert/update contracts. Keep aligned with the migrations and run `npx tsc --noEmit` after schema changes.                                                                                           |
@@ -153,6 +155,21 @@ npx tsc --noEmit
 npx supabase gen types typescript --project-id <ref> --schema public \
   > src/integrations/supabase/types.ts
 ```
+
+### SaaS metering and Paddle
+
+Apply migrations `0005_saas_metering_and_paddle.sql` and
+`0006_atomic_quota_and_webhook_events.sql` before deploying the metered scan
+flow. New and existing auth users receive three free audit credits.
+Paid subscriptions receive 25 Starter or 150 Pro audits per monthly Paddle
+billing period. Set `PADDLE_API_KEY`, `PADDLE_WEBHOOK_SECRET`,
+`PADDLE_STARTER_PRICE_ID`, `PADDLE_PRO_PRICE_ID`, and
+`PADDLE_ENVIRONMENT` in the server environment; the two Paddle price IDs must
+refer to monthly recurring prices. Configure the Paddle notification
+destination to POST `subscription.created`, `subscription.updated`, and
+`subscription.canceled` events to `/api/webhooks/paddle`. Checkout transactions
+are created server-side so Paddle's `custom_data.user_id` is bound to the
+authenticated account.
 
 `0004` is written to be idempotent and non-destructive: it never drops a table,
 and the only rows it deletes are (a) duplicate `user_roles` rows, keeping the

@@ -3,6 +3,14 @@ import { useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { AppShell } from "@/components/app-shell";
 import {
   ScanProgress,
@@ -23,9 +31,14 @@ import {
   RouteErrorFallback,
   RoutePendingFallback,
 } from "@/components/route-boundaries";
-import { useScansQuery } from "@/hooks/use-scan-queries";
+import {
+  useAuditQuotaQuery,
+  useScansQuery,
+  type AuditQuota,
+} from "@/hooks/use-scan-queries";
 import { countBySeverity, runInstantLocalScan } from "@/lib/instant-scan";
 import { listScans, runScan } from "@/lib/scan.functions";
+import { createPaddleCheckout } from "@/lib/billing.functions";
 import type { ScanSummary } from "@/lib/scan-types";
 
 export interface DashboardLoaderData {
@@ -70,7 +83,10 @@ export const Route = createFileRoute("/dashboard")({
 function Dashboard() {
   const qc = useQueryClient();
   const run = useServerFn(runScan);
+  const createCheckout = useServerFn(createPaddleCheckout);
   const { scans, isLoading } = useScansQuery(Route.useLoaderData().scans);
+  const quotaQuery = useAuditQuotaQuery();
+  const quota = quotaQuery.data;
 
   const [phase, setPhase] = useState<"idle" | "running" | "done" | "failed">(
     "idle",
@@ -84,8 +100,27 @@ function Dashboard() {
     error: null,
   });
   const [exportScan, setExportScan] = useState<ScanSummary | null>(null);
+  const [upgradeOpen, setUpgradeOpen] = useState(false);
+  const [checkoutTier, setCheckoutTier] = useState<"starter" | "pro" | null>(
+    null,
+  );
   const [copilotCode, setCopilotCode] = useState("");
   const [copilotFileType, setCopilotFileType] = useState("Python");
+
+  const startCheckout = async (tier: "starter" | "pro") => {
+    setCheckoutTier(tier);
+    try {
+      const { checkoutUrl } = await createCheckout({ data: { tier } });
+      window.location.assign(checkoutUrl);
+    } catch (err) {
+      toast.error("Unable to open Paddle Checkout", {
+        description:
+          err instanceof Error ? err.message : "Please try again shortly.",
+      });
+    } finally {
+      setCheckoutTier(null);
+    }
+  };
 
   const scanMutation = useMutation({
     mutationFn: async (input: {
@@ -128,24 +163,58 @@ function Dashboard() {
       return scan;
     },
     onMutate: () => {
+      setUpgradeOpen(false);
       setPhase("running");
       setResult(null);
       setError(null);
       setLocal({ status: "running", engine: null, counts: null, error: null });
+      const previousQuota = qc.getQueryData<AuditQuota>(["billing-quota"]);
+      if (previousQuota) {
+        const optimisticQuota = {
+          ...previousQuota,
+          remaining: Math.max(0, previousQuota.remaining - 1),
+        };
+        qc.setQueryData(["billing-quota"], optimisticQuota);
+        if (optimisticQuota.remaining === 0) setUpgradeOpen(true);
+      }
+      return { previousQuota };
     },
     onSuccess: async (res) => {
+      qc.setQueryData<AuditQuota>(["billing-quota"], (current) =>
+        current ? { ...current, remaining: res.quota_remaining } : current,
+      );
+      if (res.quota_remaining === 0) setUpgradeOpen(true);
       setResult(res);
       setPhase("done");
       toast.success("Scan completed successfully", {
         description: `Health score: ${res.health_score ?? 80}/100`,
       });
-      await qc.invalidateQueries({ queryKey: ["scans"] });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["scans"] }),
+        qc.invalidateQueries({ queryKey: ["billing-quota"] }),
+      ]);
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _input, context) => {
+      const quotaExceeded = e.message.includes("AUDIT_QUOTA_EXCEEDED");
+      if (context?.previousQuota) {
+        qc.setQueryData(
+          ["billing-quota"],
+          quotaExceeded
+            ? { ...context.previousQuota, remaining: 0 }
+            : context.previousQuota,
+        );
+      }
+      if (quotaExceeded) {
+        void qc.invalidateQueries({ queryKey: ["billing-quota"] });
+      }
+      const message = quotaExceeded
+        ? "Your available audits are used up. Choose a plan to continue scanning."
+        : e.message || "Unable to complete security audit.";
       setPhase("failed");
-      setError(e.message || "Unable to complete security audit.");
-      toast.error("Scan error", {
-        description: e.message || "Unable to complete security audit.",
+      setError(message);
+      setUpgradeOpen(quotaExceeded);
+      toast.error(quotaExceeded ? "Audit limit reached" : "Scan error", {
+        description: message,
       });
     },
   });
@@ -177,6 +246,16 @@ function Dashboard() {
         <div className="grid-bg border-b border-border/60">
           <div className="mx-auto max-w-7xl space-y-6 px-6 py-8">
             <StatCards {...totals} />
+            <div
+              className="text-right text-sm text-muted-foreground"
+              aria-live="polite"
+            >
+              {quota
+                ? `${quota.tier[0].toUpperCase()}${quota.tier.slice(1)} plan · ${quota.remaining} audits remaining`
+                : quotaQuery.isError
+                  ? "Unable to load plan usage."
+                  : "Loading plan usage…"}
+            </div>
             <ScanAnalytics scans={scans} />
           </div>
         </div>
@@ -196,6 +275,10 @@ function Dashboard() {
               <ScanForm
                 submitting={scanMutation.isPending}
                 onSubmit={(v) => {
+                  if (quota && quota.remaining === 0) {
+                    setUpgradeOpen(true);
+                    return;
+                  }
                   setCopilotCode(v.source_code);
                   setCopilotFileType(v.file_type);
                   scanMutation.mutate(v);
@@ -230,6 +313,52 @@ function Dashboard() {
             if (!v) setExportScan(null);
           }}
         />
+        <Dialog open={upgradeOpen} onOpenChange={setUpgradeOpen}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Continue auditing with ClauseGuard</DialogTitle>
+              <DialogDescription>
+                Your free audit credits or current monthly quota are exhausted.
+                Choose a monthly plan to keep scanning.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <h3 className="font-semibold">Starter</h3>
+                  <p className="text-sm text-muted-foreground">
+                    $5/month · up to 25 audits
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={checkoutTier !== null}
+                  onClick={() => void startCheckout("starter")}
+                >
+                  {checkoutTier === "starter"
+                    ? "Opening checkout…"
+                    : "Choose Starter"}
+                </Button>
+              </div>
+              <div className="space-y-3 rounded-lg border p-4">
+                <div>
+                  <h3 className="font-semibold">Pro</h3>
+                  <p className="text-sm text-muted-foreground">
+                    $15/month · up to 150 audits
+                  </p>
+                </div>
+                <Button
+                  className="w-full"
+                  variant="outline"
+                  disabled={checkoutTier !== null}
+                  onClick={() => void startCheckout("pro")}
+                >
+                  {checkoutTier === "pro" ? "Opening checkout…" : "Choose Pro"}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
       </AppShell>
     </RequireAuth>
   );

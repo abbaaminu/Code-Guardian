@@ -297,6 +297,98 @@ describe("supabase migrations match the columns src/ actually uses", () => {
     expect(createTableBody(migrationSql, "repo_embeddings")).not.toBe("");
   });
 
+  it("defines the quota and Paddle subscription contracts", () => {
+    const quotas = columnsOf("usage_quotas");
+    for (const column of [
+      "user_id",
+      "audit_credits_remaining",
+      "tier",
+      "billing_period_start",
+      "current_period_audits_used",
+    ]) {
+      expect(quotas.has(column), `usage_quotas.${column}`).toBe(true);
+    }
+
+    const subscriptions = columnsOf("paddle_subscriptions");
+    for (const column of [
+      "paddle_subscription_id",
+      "user_id",
+      "paddle_customer_id",
+      "paddle_price_id",
+      "tier",
+      "status",
+      "current_period_start",
+      "last_event_at",
+    ]) {
+      expect(subscriptions.has(column), `paddle_subscriptions.${column}`).toBe(
+        true,
+      );
+    }
+
+    const sql = squash(migrationSql);
+    expect(sql).toContain(
+      "create trigger create_audit_quota_after_user_signup",
+    );
+    expect(sql).toContain("audit_credits_remaining integer not null default 3");
+    expect(sql).toContain("increment_audit_usage(p_user_id uuid)");
+    expect(sql).toContain("current_period_audits_used < 25");
+    expect(sql).toContain("current_period_audits_used < 150");
+    expect(sql).toContain(
+      "grant execute on function public.increment_audit_usage(uuid) to service_role",
+    );
+    expect(sql).toContain(
+      "create table if not exists public.paddle_webhook_events",
+    );
+    expect(sql).toContain("apply_paddle_subscription_event");
+  });
+
+  it("returns atomic quota JSON and transactionally deduplicates Paddle events", () => {
+    const atomicMigration = squash(
+      migrations.find((file) =>
+        file.name.startsWith("0006_atomic_quota_and_webhook_events"),
+      )?.sql ?? "",
+    );
+    expect(createTableBody(migrationSql, "webhook_events")).not.toBe("");
+    expect(atomicMigration).toContain(
+      "create function public.increment_audit_usage(p_user_id uuid) returns jsonb",
+    );
+    expect(atomicMigration).toContain(
+      "jsonb_build_object( 'success', v_success, 'remaining', v_remaining )",
+    );
+    expect(atomicMigration).toContain(
+      "create or replace function public.get_audit_quota(p_user_id uuid)",
+    );
+    expect(atomicMigration).toContain(
+      "on conflict (event_id) do nothing returning event_id into v_claimed_event_id",
+    );
+    expect(atomicMigration).toContain(
+      "insert into public.webhook_events (event_id)",
+    );
+    expect(atomicMigration).toContain(
+      "alter table public.webhook_events enable row level security",
+    );
+  });
+
+  it("restricts quota, subscription, and webhook tables with RLS", () => {
+    const sql = squash(migrationSql);
+    for (const table of [
+      "usage_quotas",
+      "paddle_subscriptions",
+      "paddle_webhook_events",
+      "webhook_events",
+    ]) {
+      expect(sql).toContain(
+        `alter table public.${table} enable row level security`,
+      );
+    }
+    expect(sql).toContain(
+      "create policy usage_quotas_select_own on public.usage_quotas for select to authenticated using (auth.uid() = user_id)",
+    );
+    expect(sql).toContain(
+      "create policy paddle_subscriptions_select_own on public.paddle_subscriptions for select to authenticated using (auth.uid() = user_id)",
+    );
+  });
+
   it("uses a vector dimension that matches the embedding model being called", () => {
     const embeddingSource = readFileSync(
       path.join(repoRoot, "src", "lib", "embedding.functions.ts"),

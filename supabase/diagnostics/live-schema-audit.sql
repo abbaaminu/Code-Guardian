@@ -9,9 +9,9 @@
 -- (supabase/migrations/0001..0003) PLUS a run of ad-hoc statements typed into
 -- the SQL editor. Several of those ad-hoc statements re-created tables that
 -- already existed (so they silently did nothing) and others altered columns the
--- migrations had already handled. This script prints the live truth for the six
+-- migrations had already handled. This script prints the live truth for the ten
 -- tables the application touches, so it can be diffed against src/lib/*.ts
--- before (and after) applying 0004_reconcile_live_drift.sql.
+-- before (and after) applying 0004_reconcile_live_drift.sql and 0006.
 --
 -- HOW TO READ THE OUTPUT
 --   00 MISSING      a table the app needs does not exist at all
@@ -23,7 +23,7 @@
 --                   (true), i.e. readable/writable by anyone holding the public
 --                   anon key that ships in the browser bundle
 --   06 rows         row counts (is anything actually in there?)
---   07 functions    every search_repo_context overload
+--   07 functions    every search_repo_context and billing RPC overload
 --   08 duplicates   rows that break .maybeSingle() / the ON CONFLICT targets
 --   09 app contract the exact columns src/**/*.ts reads or writes that are
 --                   missing, legacy columns still hanging around, and FKs whose
@@ -39,7 +39,9 @@ begin
 
   foreach t in array array[
     'scans', 'vulnerabilities', 'policies',
-    'user_roles', 'vault_secrets', 'repo_embeddings'
+    'user_roles', 'vault_secrets', 'repo_embeddings',
+    'usage_quotas', 'paddle_subscriptions', 'paddle_webhook_events',
+    'webhook_events'
   ]
   loop
     if to_regclass('public.' || t) is null then
@@ -105,17 +107,16 @@ begin
            pg_get_function_result(p.oid) as result
     from pg_proc p
     join pg_namespace n on n.oid = p.pronamespace
-    where n.nspname = 'public' and p.proname = 'search_repo_context'
+    where n.nspname = 'public'
+      and p.proname in (
+        'search_repo_context', 'increment_audit_usage',
+        'apply_paddle_subscription_event'
+      )
   loop
     insert into diag values (
       '07 functions',
-      'search_repo_context(' || r.args || ')',
-      'returns ' || r.result ||
-        case
-          when r.args like '%match_user_id%'
-          then ' [matches src/lib/agent.functions.ts]'
-          else ' [unusable by the app call site: drop this overload]'
-        end
+      r.oid::regprocedure::text,
+      'returns ' || r.result
     );
   end loop;
 
@@ -162,7 +163,23 @@ begin
       ('repo_embeddings', 'user_id'), ('repo_embeddings', 'owner'),
       ('repo_embeddings', 'repo'), ('repo_embeddings', 'file_path'),
       ('repo_embeddings', 'content'), ('repo_embeddings', 'file_sha'),
-      ('repo_embeddings', 'embedding')
+      ('repo_embeddings', 'embedding'),
+      ('usage_quotas', 'user_id'),
+      ('usage_quotas', 'audit_credits_remaining'),
+      ('usage_quotas', 'tier'),
+      ('usage_quotas', 'billing_period_start'),
+      ('usage_quotas', 'current_period_audits_used'),
+      ('paddle_subscriptions', 'paddle_subscription_id'),
+      ('paddle_subscriptions', 'user_id'),
+      ('paddle_subscriptions', 'paddle_customer_id'),
+      ('paddle_subscriptions', 'paddle_price_id'),
+      ('paddle_subscriptions', 'tier'),
+      ('paddle_subscriptions', 'status'),
+      ('paddle_subscriptions', 'current_period_start'),
+      ('paddle_subscriptions', 'last_event_at'),
+      ('paddle_webhook_events', 'event_id'),
+      ('webhook_events', 'event_id'),
+      ('webhook_events', 'processed_at')
     ) as v(tbl, col)
   loop
     if to_regclass('public.' || r.tbl) is null then

@@ -18,6 +18,7 @@ import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScansIdRouteImport } from './routes/scans.$id'
 import { Route as ApiScanInstantRouteImport } from './routes/api.scan.instant'
 import { Route as ApiWebhooksGithubRouteImport } from './routes/api.webhooks.github'
+import { Route as ApiWebhooksPaddleRouteImport } from './routes/api.webhooks.paddle'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -64,6 +65,11 @@ const ApiWebhooksGithubRoute = ApiWebhooksGithubRouteImport.update({
   path: '/api/webhooks/github',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiWebhooksPaddleRoute = ApiWebhooksPaddleRouteImport.update({
+  id: '/api/webhooks/paddle',
+  path: '/api/webhooks/paddle',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -75,6 +81,7 @@ export interface FileRoutesByFullPath {
   '/scans/$id': typeof ScansIdRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
+  '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -86,6 +93,7 @@ export interface FileRoutesByTo {
   '/scans/$id': typeof ScansIdRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
+  '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -98,6 +106,7 @@ export interface FileRoutesById {
   '/scans/$id': typeof ScansIdRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
+  '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -111,6 +120,7 @@ export interface FileRouteTypes {
     | '/scans/$id'
     | '/api/scan/instant'
     | '/api/webhooks/github'
+    | '/api/webhooks/paddle'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -122,6 +132,7 @@ export interface FileRouteTypes {
     | '/scans/$id'
     | '/api/scan/instant'
     | '/api/webhooks/github'
+    | '/api/webhooks/paddle'
   id:
     | '__root__'
     | '/'
@@ -133,6 +144,7 @@ export interface FileRouteTypes {
     | '/scans/$id'
     | '/api/scan/instant'
     | '/api/webhooks/github'
+    | '/api/webhooks/paddle'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -145,6 +157,7 @@ export interface RootRouteChildren {
   ScansIdRoute: typeof ScansIdRoute
   ApiScanInstantRoute: typeof ApiScanInstantRoute
   ApiWebhooksGithubRoute: typeof ApiWebhooksGithubRoute
+  ApiWebhooksPaddleRoute: typeof ApiWebhooksPaddleRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +225,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksGithubRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/webhooks/paddle': {
+      id: '/api/webhooks/paddle'
+      path: '/api/webhooks/paddle'
+      fullPath: '/api/webhooks/paddle'
+      preLoaderRoute: typeof ApiWebhooksPaddleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -225,6 +245,7 @@ const rootRouteChildren: RootRouteChildren = {
   ScansIdRoute: ScansIdRoute,
   ApiScanInstantRoute: ApiScanInstantRoute,
   ApiWebhooksGithubRoute: ApiWebhooksGithubRoute,
+  ApiWebhooksPaddleRoute: ApiWebhooksPaddleRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

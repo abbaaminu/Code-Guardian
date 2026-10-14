@@ -11,12 +11,26 @@
 import { useQuery } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getScanReport, listPolicies, listScans } from "@/lib/scan.functions";
+import { getAuditQuota } from "@/lib/billing.functions";
 import type {
   Policy,
   ScanReport,
   ScanSummary,
   ScanVulnerability,
 } from "@/lib/scan-types";
+
+export interface AuditQuota {
+  tier: "free" | "starter" | "pro";
+  remaining: number;
+}
+
+export function useAuditQuotaQuery() {
+  const fetchQuota = useServerFn(getAuditQuota);
+  return useQuery({
+    queryKey: ["billing-quota"],
+    queryFn: () => fetchQuota(),
+  });
+}
 
 export interface ScansQueryResult {
   scans: ScanSummary[];
