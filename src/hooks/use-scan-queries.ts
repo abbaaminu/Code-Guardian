@@ -38,6 +38,18 @@ export interface ScansQueryResult {
 }
 
 /**
+ * N5: both list queries below deliberately fail soft (see `useScansQuery`).
+ * Centralizing the log keeps one message shape, so browser logs stay filterable
+ * on the `[scan-queries]` tag, and passes the raw error for the console.
+ */
+function logListFallback(what: "scan" | "policy", err: unknown) {
+  console.warn(
+    `[scan-queries] Failed to fetch remote ${what} list, returning empty array:`,
+    err,
+  );
+}
+
+/**
  * Dashboard "recent audits" list. Fails soft to `[]` (same as the pre-refactor
  * behavior) so an unauthenticated visitor is redirected by `RequireAuth`
  * instead of being dropped into an error boundary.
@@ -53,10 +65,7 @@ export function useScansQuery(
         const res = await list();
         return res ?? [];
       } catch (err) {
-        console.warn(
-          "Failed to fetch remote scan list, returning empty array:",
-          err,
-        );
+        logListFallback("scan", err);
         return [];
       }
     },
@@ -111,10 +120,7 @@ export function usePoliciesQuery(
         const res = await listFn();
         return res ?? [];
       } catch (err) {
-        console.warn(
-          "Failed to fetch remote policy list, returning empty array:",
-          err,
-        );
+        logListFallback("policy", err);
         return [];
       }
     },

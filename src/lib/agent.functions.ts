@@ -332,8 +332,7 @@ export const runAgentTask = createServerFn({ method: "POST" })
       );
     }
 
-    const apiKey =
-      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+    const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       throw new Error(
         "Agent AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",

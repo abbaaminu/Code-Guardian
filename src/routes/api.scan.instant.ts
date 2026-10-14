@@ -22,6 +22,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import type {} from "@tanstack/react-start";
 import { z } from "zod";
 import { runLocalSAST } from "@/lib/sast-engine";
+import { instantScanRateLimiter } from "@/lib/rate-limiter";
 
 const InstantScanInput = z.object({
   file_type: z.string().min(1).max(40),
@@ -70,8 +71,9 @@ export const Route = createFileRoute("/api/scan/instant")({
   server: {
     handlers: {
       POST: async ({ request }) => {
+        let userId: string;
         try {
-          await requireBearerUser(request);
+          userId = await requireBearerUser(request);
         } catch (res) {
           if (res instanceof Response) return res;
           console.error(
@@ -79,6 +81,13 @@ export const Route = createFileRoute("/api/scan/instant")({
             res,
           );
           return jsonError("Authentication failed unexpectedly.", 500);
+        }
+
+        if (!instantScanRateLimiter.tryTake(userId)) {
+          return jsonError(
+            "Instant scan rate limit reached. Please wait before trying again.",
+            429,
+          );
         }
 
         let parsed: z.infer<typeof InstantScanInput>;

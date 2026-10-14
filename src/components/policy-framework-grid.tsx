@@ -12,12 +12,12 @@ import {
   FileCheck2,
   ShieldCheck,
   Sparkles,
-  Wrench,
-  Settings2,
 } from "lucide-react";
+import { PRESETS, type PresetKey } from "@/lib/policy-presets";
 import type { Policy } from "@/lib/scan-types";
 
-export const FRAMEWORKS = [
+// N2: not exported — this list is only consumed by the two components below.
+const FRAMEWORKS = [
   {
     key: "OWASP Top 10",
     icon: ShieldAlert,
@@ -47,38 +47,6 @@ export const FRAMEWORKS = [
     blurb: "SOC 2, HIPAA, PCI-DSS, GDPR alignment.",
   },
 ] as const;
-
-export type PresetKey = "strict" | "dev" | "custom";
-
-export const PRESETS: {
-  key: PresetKey;
-  label: string;
-  icon: typeof Sparkles;
-  description: string;
-  match?: (p: Policy) => boolean;
-}[] = [
-  {
-    key: "strict",
-    label: "Strict Security Mode",
-    icon: Sparkles,
-    description: "Enable every policy across all frameworks.",
-    match: () => true,
-  },
-  {
-    key: "dev",
-    label: "Dev-Friendly",
-    icon: Wrench,
-    description: "Only medium & high impact: OWASP + Secret Scanning.",
-    match: (p) =>
-      p.category === "OWASP Top 10" || p.category === "Secret Scanning",
-  },
-  {
-    key: "custom",
-    label: "Custom Policy",
-    icon: Settings2,
-    description: "Fine-tune each rule manually.",
-  },
-];
 
 export function PolicyPresetSidebar({
   policies,

@@ -21,10 +21,7 @@ import { ScanAnalytics } from "@/components/scan-analytics";
 import { ReportExportDialog } from "@/components/report-export-dialog";
 import { CopilotChat } from "@/components/copilot-chat";
 import { RequireAuth } from "@/components/require-auth";
-import {
-  StatCards,
-  computeScanTotals,
-} from "@/components/dashboard-stat-cards";
+import { StatCards } from "@/components/dashboard-stat-cards";
 import { ScanForm } from "@/components/dashboard-scan-form";
 import { RecentScansTable } from "@/components/dashboard-recent-scans";
 import {
@@ -39,6 +36,7 @@ import {
 import { countBySeverity, runInstantLocalScan } from "@/lib/instant-scan";
 import { listScans, runScan } from "@/lib/scan.functions";
 import { createPaddleCheckout } from "@/lib/billing.functions";
+import { computeScanTotals } from "@/lib/scan-metrics";
 import type { ScanSummary } from "@/lib/scan-types";
 
 export interface DashboardLoaderData {

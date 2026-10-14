@@ -18,7 +18,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { ChevronDown, ExternalLink, FileDown } from "lucide-react";
-import { HealthBar, topSeverity } from "@/components/dashboard-stat-cards";
+import { HealthBar } from "@/components/dashboard-stat-cards";
+import { topSeverity } from "@/lib/scan-metrics";
 import type { ScanSummary } from "@/lib/scan-types";
 
 export function RecentScansTable({

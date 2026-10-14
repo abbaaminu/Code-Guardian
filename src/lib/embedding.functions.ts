@@ -3,6 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import { geminiApiRateLimiter } from "@/lib/rate-limiter";
 
 // Server-side admin client (service role) — loaded lazily so this module can
 // safely ship to the client bundle without leaking the service-role key.
@@ -126,6 +127,12 @@ export const indexRepository = createServerFn({ method: "POST" })
       .parse(input),
   )
   .handler(async ({ data, context }) => {
+    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+      throw new Error(
+        "Rate limit reached — please wait before indexing another repository.",
+      );
+    }
+
     const supabase = await serverSupabase();
     const userId = context.userId;
     // M3: read GITHUB_TOKEN via the server-only token module instead of
@@ -134,8 +141,7 @@ export const indexRepository = createServerFn({ method: "POST" })
     // Per-user PAT (encrypted vault) first, so private repositories and the
     // user's own GitHub rate limit are used; the bot token is the fallback for
     // deployments that only have a single automation account.
-    const apiKey =
-      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+    const apiKey = process.env.GOOGLE_API_KEY;
     let token = getGithubToken();
     try {
       const { getDecryptedRepoTokenServerOnly } =

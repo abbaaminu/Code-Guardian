@@ -113,3 +113,9 @@ export const geminiApiRateLimiter = new PerUserRateLimiter({
   capacity: 6,
   refillPerSecond: 1 / 10,
 });
+
+/** Local scans are cheaper than Gemini calls but still consume CPU per request. */
+export const instantScanRateLimiter = new PerUserRateLimiter({
+  capacity: 30,
+  refillPerSecond: 1 / 2,
+});

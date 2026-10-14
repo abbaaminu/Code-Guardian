@@ -6,11 +6,10 @@ import { toast } from "sonner";
 import { AppShell } from "@/components/app-shell";
 import { RequireAuth } from "@/components/require-auth";
 import {
-  PRESETS,
   PolicyFrameworkList,
   PolicyPresetSidebar,
-  type PresetKey,
 } from "@/components/policy-framework-grid";
+import { PRESETS, type PresetKey } from "@/lib/policy-presets";
 import {
   RouteErrorFallback,
   RoutePendingFallback,

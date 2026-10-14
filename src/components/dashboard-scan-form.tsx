@@ -29,7 +29,9 @@ import {
   AlertCircle,
 } from "lucide-react";
 
-export const LANGUAGES = [
+// N3: module-private — the picker is the only consumer, and exporting them made
+// the module a mixed component/non-component module (react-refresh).
+const LANGUAGES = [
   "Python",
   "JavaScript",
   "TypeScript",
@@ -46,7 +48,7 @@ export const LANGUAGES = [
 ];
 
 // L3: static scan-form metadata hoisted out of the ScanForm component.
-export const SUPPORTED_EXT = [
+const SUPPORTED_EXT = [
   "py",
   "js",
   "ts",
@@ -68,7 +70,7 @@ export const SUPPORTED_EXT = [
   "env",
 ];
 
-export const EXT_LANG_MAP: Record<string, string> = {
+const EXT_LANG_MAP: Record<string, string> = {
   py: "Python",
   js: "JavaScript",
   ts: "TypeScript",

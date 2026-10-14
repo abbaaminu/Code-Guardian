@@ -1,7 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { Activity, ScanLine, ShieldAlert } from "lucide-react";
-import { SEVERITIES, type Severity } from "@/lib/severity";
-import type { ScanSummary } from "@/lib/scan-types";
+import type { ScanTotals } from "@/lib/scan-metrics";
 
 // L1: static UI metadata hoisted out of the render path so it isn't recreated
 // on every render.
@@ -15,29 +14,10 @@ const STAT_CARD_META = [
   { label: "Avg code health score", icon: Activity, tint: "text-primary" },
 ] as const;
 
-export interface DashboardTotals {
-  total: number;
-  critical: number;
-  avgHealth: number;
-}
+// N1: `DashboardTotals`, `computeScanTotals` and `topSeverity` moved to
+// src/lib/scan-metrics.ts so this module only exports components.
 
-/** Derive the three headline stats from the scans list. */
-export function computeScanTotals(scans: ScanSummary[]): DashboardTotals {
-  return {
-    total: scans.length,
-    critical: scans.reduce(
-      (n, s) => n + (s.vulnerabilities_count?.critical ?? 0),
-      0,
-    ),
-    avgHealth: scans.length
-      ? Math.round(
-          scans.reduce((n, s) => n + (s.health_score ?? 0), 0) / scans.length,
-        )
-      : 0,
-  };
-}
-
-export function StatCards({ total, critical, avgHealth }: DashboardTotals) {
+export function StatCards({ total, critical, avgHealth }: ScanTotals) {
   const values = [total, critical, `${avgHealth}/100`] as const;
   return (
     <div className="grid gap-4 md:grid-cols-3">
@@ -82,12 +62,4 @@ export function HealthBar({ score }: { score: number }) {
       </span>
     </div>
   );
-}
-
-export function topSeverity(
-  counts: Record<Severity, number> | undefined,
-): Severity | null {
-  if (!counts) return null;
-  for (const s of SEVERITIES) if ((counts[s] ?? 0) > 0) return s;
-  return null;
 }

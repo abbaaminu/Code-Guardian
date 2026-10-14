@@ -6,6 +6,10 @@ import { runLocalSAST } from "@/lib/sast-engine";
 import { buildSarifLog } from "@/lib/sarif";
 import { geminiApiRateLimiter } from "@/lib/rate-limiter";
 import { withEngineTiming } from "@/lib/telemetry/sentry";
+import {
+  parseCopilotResponse,
+  parseGeminiVulnerabilities,
+} from "@/lib/gemini-response";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -133,7 +137,7 @@ async function callGemini(
   code: string,
   policies: string[],
 ): Promise<unknown[]> {
-  const apiKey = process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+  const apiKey = process.env.GOOGLE_API_KEY;
   if (!apiKey)
     throw new Error(
       "Security audit AI engine is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
@@ -193,13 +197,8 @@ ${code}
   };
   const content =
     data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ??
-    "{}";
-  try {
-    const parsed = JSON.parse(content) as { vulnerabilities?: unknown };
-    return Array.isArray(parsed.vulnerabilities) ? parsed.vulnerabilities : [];
-  } catch {
-    return [];
-  }
+    "";
+  return parseGeminiVulnerabilities(content);
 }
 
 export const runScan = createServerFn({ method: "POST" })
@@ -448,8 +447,7 @@ export const copilotRemediate = createServerFn({ method: "POST" })
       );
     }
 
-    const apiKey =
-      process.env.GOOGLE_API_KEY || process.env.VITE_GOOGLE_API_KEY;
+    const apiKey = process.env.GOOGLE_API_KEY;
     if (!apiKey) {
       throw new Error(
         "Copilot AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
@@ -509,35 +507,8 @@ ${data.source_code}
     const content =
       payload.candidates?.[0]?.content?.parts
         ?.map((p) => p.text ?? "")
-        .join("") ?? "{}";
-    try {
-      const parsed = JSON.parse(content) as {
-        updated_code?: unknown;
-        summary?: unknown;
-        changes?: unknown;
-      };
-      return {
-        updated_code:
-          typeof parsed.updated_code === "string"
-            ? parsed.updated_code
-            : data.source_code,
-        summary:
-          typeof parsed.summary === "string"
-            ? parsed.summary.slice(0, 500)
-            : "Updated code generated.",
-        changes: Array.isArray(parsed.changes)
-          ? parsed.changes
-              .filter((c): c is string => typeof c === "string")
-              .slice(0, 8)
-          : [],
-      };
-    } catch {
-      return {
-        updated_code: data.source_code,
-        summary: "Copilot returned no parseable changes.",
-        changes: [],
-      };
-    }
+        .join("") ?? "";
+    return parseCopilotResponse(content);
   });
 
 // SECURITY FIX (H5): togglePolicy requires BOTH a signed-in user (middleware)

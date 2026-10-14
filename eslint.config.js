@@ -39,5 +39,16 @@ export default tseslint.config(
       "@typescript-eslint/no-unused-vars": "off",
     },
   },
+  {
+    // N6: files under src/components/ui are vendored shadcn/ui primitives. They
+    // intentionally co-export CVA variant maps (buttonVariants, badgeVariants,
+    // navigationMenuTriggerStyle) and hooks (useSidebar, useFormField) alongside
+    // their component, which react-refresh flags. Editing generated files to
+    // satisfy the rule would conflict with future upstream updates; app code
+    // (src/components/*, src/routes/*, src/hooks/*) keeps the rule enabled so an
+    // accidental mixed export there is still caught.
+    files: ["src/components/ui/**/*.{ts,tsx}"],
+    rules: { "react-refresh/only-export-components": "off" },
+  },
   eslintPluginPrettier,
 );

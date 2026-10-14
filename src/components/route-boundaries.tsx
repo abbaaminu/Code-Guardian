@@ -1,18 +1,23 @@
-import { Link, useRouter } from "@tanstack/react-router";
+import {
+  Link,
+  useRouter,
+  type ErrorComponentProps,
+} from "@tanstack/react-router";
+import { useEffect } from "react";
 import { AlertTriangle, ArrowLeft, Loader2, RotateCcw } from "lucide-react";
 
 // Shared error / pending / not-found fallbacks. Every route (including the root
 // route) uses these so the whole tree gets a consistent, styled recovery UX.
 
-export function RouteErrorFallback({
-  error,
-  reset,
-}: {
-  error: Error;
-  reset: () => void;
-}) {
-  console.error(error);
+export function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
+
+  // N4: report in an effect, never during render. React may render (and throw
+  // away) a boundary more than once — logging inline double-reported every error
+  // and logged even for renders that never reached the screen.
+  useEffect(() => {
+    console.error(error);
+  }, [error]);
 
   return (
     <div

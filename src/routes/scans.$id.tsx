@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { useMemo, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { Card } from "@/components/ui/card";
@@ -34,14 +34,17 @@ export const Route = createFileRoute("/scans/$id")({
       },
     ],
   }),
-  // Reject malformed scan ids before any fetch: return `false` so the router
-  // renders this route's notFoundComponent instead of a blank page. Mirrors the
-  // server-side `z.uuid()` validator in getScanReport.
-  parseParams: ({ id }) => {
-    if (!z.string().uuid().safeParse(id).success) return false;
-    return { id };
+  // Reject malformed scan ids before any fetch.
+  params: {
+    parse: ({ id }) => {
+      const parsedId = z.string().uuid().safeParse(id);
+      if (!parsedId.success) throw notFound();
+      return { id: parsedId.data };
+    },
   },
-  loader: async (ctx) => ({ scanId: ctx.params.id }),
+  loader: async ({ params }): Promise<ScanReportLoaderData> => ({
+    scanId: params.id,
+  }),
   component: ScanReport,
   errorComponent: RouteErrorFallback,
   notFoundComponent: () => (
