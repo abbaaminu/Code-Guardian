@@ -2,7 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
-import { geminiApiRateLimiter } from "@/lib/rate-limiter";
+import { aiApiRateLimiter } from "@/lib/rate-limiter";
+import { requestDeepSeekChat } from "@/lib/deepseek";
 import {
   validateAgentEdits,
   type SafeAgentEdit,
@@ -81,88 +82,101 @@ async function getUserGithubToken(userId: string): Promise<string | null> {
 }
 
 // ==========================================
-// 2. VECTOR EMBEDDINGS & CONTEXT RETRIEVAL
+// 2. GITHUB SOURCE CONTEXT
 // ==========================================
 
 /**
- * Generates a vector embedding for the agent's instructions using Google's text-embedding-004.
- */
-async function getInstructionEmbedding(
-  text: string,
-  apiKey: string,
-): Promise<number[]> {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/text-embedding-004:embedContent?key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "models/text-embedding-004",
-      content: { parts: [{ text }] },
-    }),
-  });
-
-  if (!res.ok) {
-    const errText = await res.text();
-    if (
-      res.status === 401 ||
-      res.status === 403 ||
-      errText.includes("API_KEY_INVALID")
-    ) {
-      throw new Error(
-        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
-      );
-    }
-    throw new Error(`Failed to generate embedding for instruction: ${errText}`);
-  }
-
-  const data = (await res.json()) as { embedding?: { values?: number[] } };
-  return data.embedding?.values ?? [];
-}
-
-/**
- * Queries Supabase pgvector to retrieve the most relevant file chunks for the given instruction.
- * `supabase` is the server-side client resolved inside the runAgentTask handler.
- * `userId` is the authenticated caller: the retrieval runs on the service-role
- * client, which bypasses RLS, so this parameter is the only thing scoping the
- * search to the caller's own embeddings (see 0003_repo_embeddings.sql).
+ * Loads a bounded set of source files from the caller's selected GitHub repo.
  */
 export async function retrieveRepoContext(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
-  userId: string,
   owner: string,
   repo: string,
-  instruction: string,
-  apiKey: string,
-  matchCount = 6,
-): Promise<Array<{ file_path: string; content: string; similarity: number }>> {
-  const queryVector = await getInstructionEmbedding(instruction, apiKey);
-
-  if (queryVector.length === 0) {
+  branch: string,
+  token: string,
+): Promise<Array<{ file_path: string; content: string }>> {
+  const headers = {
+    Accept: "application/vnd.github+json",
+    Authorization: `Bearer ${token}`,
+    "X-GitHub-Api-Version": "2022-11-28",
+  };
+  const treeResponse = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`,
+    { headers },
+  );
+  if (!treeResponse.ok) {
     throw new Error(
-      "Could not compute embedding vector for context retrieval.",
+      `Could not read repository file tree (HTTP ${treeResponse.status}).`,
     );
   }
+  const tree = (await treeResponse.json()) as {
+    tree?: Array<{ path?: string; type?: string; size?: number }>;
+  };
+  const supportedExtensions = new Set([
+    "js",
+    "jsx",
+    "ts",
+    "tsx",
+    "py",
+    "rb",
+    "go",
+    "php",
+    "java",
+    "kt",
+    "cs",
+    "sol",
+    "rs",
+    "c",
+    "cpp",
+    "h",
+    "sql",
+    "yml",
+    "yaml",
+    "json",
+    "sh",
+  ]);
+  const files = (tree.tree ?? [])
+    .filter((file) => {
+      const filePath = file.path ?? "";
+      const extension = filePath.split(".").pop()?.toLowerCase() ?? "";
+      return (
+        file.type === "blob" &&
+        typeof file.size === "number" &&
+        file.size < 50_000 &&
+        supportedExtensions.has(extension) &&
+        !/(^|\/)(node_modules|dist|build|\.git)(\/|$)/i.test(filePath) &&
+        !/(^|\/)\.env(?:\.|$)/i.test(filePath) &&
+        !filePath.endsWith(".lock")
+      );
+    })
+    .slice(0, 6);
 
-  // RPC created by supabase/migrations/0003_repo_embeddings.sql.
-  const { data, error } = await supabase.rpc("search_repo_context", {
-    query_embedding: queryVector,
-    match_threshold: 0.5,
-    match_count: matchCount,
-    repo_owner: owner,
-    repo_name: repo,
-    match_user_id: userId,
-  });
-
-  if (error) {
-    console.warn(
-      `Vector search error (${error.message}). Proceeding without vector context.`,
-    );
-    return [];
+  const contextFiles: Array<{
+    file_path: string;
+    content: string;
+  }> = [];
+  for (const file of files) {
+    const filePath = file.path!;
+    const fileUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${filePath
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/")}?ref=${encodeURIComponent(branch)}`;
+    const response = await fetch(fileUrl, {
+      headers: {
+        ...headers,
+        Accept: "application/vnd.github.raw+json",
+      },
+    });
+    if (!response.ok) {
+      throw new Error(
+        `Could not read repository file '${filePath}' (HTTP ${response.status}).`,
+      );
+    }
+    contextFiles.push({
+      file_path: filePath,
+      content: (await response.text()).slice(0, 8000),
+    });
   }
-
-  return Array.isArray(data) ? data : [];
+  return contextFiles;
 }
 
 // ==========================================
@@ -170,22 +184,21 @@ export async function retrieveRepoContext(
 // ==========================================
 
 /**
- * Uses Gemini to analyze relevant repository files and generate multi-file remediation code.
+ * Uses DeepSeek to analyze repository files and generate multi-file remediation code.
  */
 async function generateRemediationPlan(
   instruction: string,
   contextFiles: Array<{ file_path: string; content: string }>,
   apiKey: string,
 ): Promise<AgentPlan> {
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
 
   const contextPrompt = contextFiles
     .map((f) => `--- FILE: ${f.file_path} ---\n${f.content}\n--- END FILE ---`)
     .join("\n\n");
 
   const systemPrompt = `You are SecurePulse Autonomous Agent, an expert code security remediator.
-You are given a target instruction and relevant source code files retrieved from the repository's vector index.
+You are given a target instruction and source code files fetched directly from the target repository.
 
 STRICT OUTPUT CONTRACT:
 Return ONLY a valid JSON object matching this exact schema:
@@ -206,42 +219,15 @@ Do NOT wrap the response in markdown code blocks (\`\`\`). Return JSON text only
 
   const userMessage = `INSTRUCTION: ${instruction}\n\nRETRIEVED REPOSITORY CONTEXT:\n${contextPrompt || "No context files found. Generate standalone structural fixes if possible."}`;
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text: userMessage }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.1,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const responseBody = await res.text();
-    if (
-      res.status === 401 ||
-      res.status === 403 ||
-      responseBody.includes("API_KEY_INVALID")
-    ) {
-      throw new Error(
-        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
-      );
-    }
-    throw new Error(
-      `AI Agent Planner failed with status ${res.status}: ${responseBody.slice(0, 300)}`,
-    );
-  }
-
-  const payload = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const content =
-    payload.candidates?.[0]?.content?.parts
-      ?.map((p) => p.text ?? "")
-      .join("") ?? "{}";
+  const content = await requestDeepSeekChat(
+    apiKey,
+    model,
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ],
+    0.1,
+  );
 
   try {
     const parsed = JSON.parse(content) as AgentPlan;
@@ -318,7 +304,7 @@ export async function triggerValidationWorkflow(
  *    deployment-wide GITHUB_TOKEN is never used for caller-selected repositories.
  *  - Every AI-proposed edit passes `validateAgentEdits` before any blob/tree/ref
  *    is created (H1).
- *  - Gemini calls are per-user rate limited alongside runScan/copilotRemediate
+ *  - DeepSeek calls are per-user rate limited alongside runScan/copilotRemediate
  *    (H4).
  */
 export const runAgentTask = createServerFn({ method: "POST" })
@@ -332,32 +318,26 @@ export const runAgentTask = createServerFn({ method: "POST" })
       );
     }
 
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "Agent AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+        "Agent AI is temporarily unconfigured. Set DEEPSEEK_API_KEY in the server environment.",
       );
     }
 
-    // Per-user rate limit: this task makes paid Gemini calls (embedding + plan).
-    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+    // Per-user rate limit: this task makes paid DeepSeek calls.
+    if (!aiApiRateLimiter.tryTake(context.userId)) {
       throw new Error(
         "Rate limit reached — please wait a moment before running another agent task.",
       );
     }
 
-    const { supabaseAdmin } =
-      await import("@/integrations/supabase/client.server");
-    const supabase = supabaseAdmin;
-
-    // Step 1: Retrieve semantic context from Supabase pgvector store
+    // Step 1: Read bounded source context directly from the selected repository.
     const contextFiles = await retrieveRepoContext(
-      supabase,
-      context.userId,
       data.owner,
       data.repo,
-      data.instruction,
-      apiKey,
+      data.branch || "main",
+      githubToken,
     );
 
     // Step 2: Generate the remediation plan and multi-file code modifications

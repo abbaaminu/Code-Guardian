@@ -1,30 +1,27 @@
 import { describe, expect, it } from "vitest";
-import {
-  parseCopilotResponse,
-  parseGeminiVulnerabilities,
-} from "./gemini-response";
+import { parseCopilotResponse, parseAuditVulnerabilities } from "./ai-response";
 
-describe("parseGeminiVulnerabilities", () => {
+describe("parseAuditVulnerabilities", () => {
   it("returns the vulnerabilities from a valid response", () => {
     const findings = [{ title: "Unsafe query" }];
 
     expect(
-      parseGeminiVulnerabilities(JSON.stringify({ vulnerabilities: findings })),
+      parseAuditVulnerabilities(JSON.stringify({ vulnerabilities: findings })),
     ).toEqual(findings);
   });
 
   it("accepts a valid response with no findings", () => {
-    expect(parseGeminiVulnerabilities('{"vulnerabilities":[]}')).toEqual([]);
+    expect(parseAuditVulnerabilities('{"vulnerabilities":[]}')).toEqual([]);
   });
 
   it("rejects malformed JSON instead of reporting a clean scan", () => {
-    expect(() => parseGeminiVulnerabilities("{")).toThrow(
-      "Gemini returned invalid JSON",
+    expect(() => parseAuditVulnerabilities("{")).toThrow(
+      "AI provider returned invalid JSON",
     );
   });
 
   it("rejects responses without a vulnerabilities array", () => {
-    expect(() => parseGeminiVulnerabilities("{}")).toThrow(
+    expect(() => parseAuditVulnerabilities("{}")).toThrow(
       "expected a vulnerabilities array",
     );
   });

@@ -1,14 +1,14 @@
 # supabase/
 
-| Path                                       | Purpose                                                                                                                                                                                                                  |
-| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `migrations/0001..0003`                    | Multi-tenancy + RLS + vault (0001), admin roles (0002), repo embeddings + the `search_repo_context` RPC (0003).                                                                                                          |
-| `migrations/0004_reconcile_live_drift.sql` | Reconciles the live database with the code — see below. Idempotent; safe to re-run.                                                                                                                                      |
-| `migrations/0005_saas_metering_and_paddle.sql` | Adds signup trial credits, atomic audit quotas, subscription state, and Paddle webhook RPCs.                                                                                                                         |
-| `migrations/0006_atomic_quota_and_webhook_events.sql` | Returns authoritative quota JSON and transactionally claims Paddle webhook event IDs.                                                                                                                        |
-| `diagnostics/live-schema-audit.sql`        | **Read-only.** Prints one table of what is actually in the database: columns, RLS state, constraints, indexes, policies, the RPC overloads, and every app-required column that is missing. Run it before and after 0004. |
-| `../src/lib/supabase-schema.test.ts`       | Static guard that the SQL in this directory still provides every column, key and policy the code in `src/lib` uses.                                                                                                      |
-| `../src/integrations/supabase/types.ts`    | Supabase client row/insert/update contracts. Keep aligned with the migrations and run `npx tsc --noEmit` after schema changes.                                                                                           |
+| Path                                                  | Purpose                                                                                                                                                                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `migrations/0001..0003`                               | Multi-tenancy + RLS + vault (0001), admin roles (0002), and legacy repository vector schema (0003; indexing is retired).                                                                                                 |
+| `migrations/0004_reconcile_live_drift.sql`            | Reconciles the live database with the code — see below. Idempotent; safe to re-run.                                                                                                                                      |
+| `migrations/0005_saas_metering_and_paddle.sql`        | Adds signup trial credits, atomic audit quotas, subscription state, and Paddle webhook RPCs.                                                                                                                             |
+| `migrations/0006_atomic_quota_and_webhook_events.sql` | Returns authoritative quota JSON and transactionally claims Paddle webhook event IDs.                                                                                                                                    |
+| `diagnostics/live-schema-audit.sql`                   | **Read-only.** Prints one table of what is actually in the database: columns, RLS state, constraints, indexes, policies, the RPC overloads, and every app-required column that is missing. Run it before and after 0004. |
+| `../src/lib/supabase-schema.test.ts`                  | Static guard that the SQL in this directory still provides every column, key and policy the code in `src/lib` uses.                                                                                                      |
+| `../src/integrations/supabase/types.ts`               | Supabase client row/insert/update contracts. Keep aligned with the migrations and run `npx tsc --noEmit` after schema changes.                                                                                           |
 
 ## Why there is a "drift" migration
 
@@ -115,30 +115,16 @@ upsert at 47-57 passes `onConflict: "user_id,provider,label"`, which 0001's
 because a wide-open policy next to the correct one would expose the ciphertext,
 token IVs and auth tags of every stored PAT.
 
-### repo_embeddings (`src/lib/embedding.functions.ts`, `src/lib/agent.functions.ts`)
+### repo_embeddings (legacy schema; indexing retired)
 
-| Column          | Used by                                   | Provided by                        | Status                                                                                                                               |
-| --------------- | ----------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `user_id`       | written 206, filtered 242/259             | 0003, added if missing by 0004 §6a | was absent in the ad-hoc shape — the upsert then failed with `42703`                                                                 |
-| `owner`, `repo` | written 207-208, filtered 243-244/260-261 | 0003 / 0004 §6a                    | ok                                                                                                                                   |
-| `file_path`     | written 209, selected 241, deleted by 262 | 0003 / 0004 §6a                    | ok                                                                                                                                   |
-| `content`       | written 210                               | 0003 / 0004 §6a                    | ok                                                                                                                                   |
-| `file_sha`      | written 211                               | 0003 / 0004 §6a                    | ok                                                                                                                                   |
-| `embedding`     | written 212                               | 0003 / 0004 §6a                    | ok — `vector(768)`, which matches the model both call sites use (`text-embedding-004`, 768 dims, no `outputDimensionality` override) |
+DeepSeek chat completions do not provide embeddings. The application no longer
+indexes or queries this table; agent context is fetched directly from GitHub.
+The table and RPC remain in migrations for existing deployments and are not
+used by current application code.
 
-Non-column contracts that only fail at runtime:
-
-- `upsert(..., { onConflict: "user_id,owner,repo,file_path" })` (229) needs exactly
-  that unique key, otherwise Postgres rejects it with `42P10`. 0004 §6c adds it to
-  an ad-hoc table that lacks it.
-- RLS must be enabled: with the ad-hoc schema it was not, so the anon key could
-  read every indexed repository's contents. 0004 §6e.
-- `search_repo_context` must have the parameter names `agent.functions.ts:155`
-  passes — `query_embedding`, `match_threshold`, `match_count`, `repo_owner`,
-  `repo_name`, `match_user_id`. The ad-hoc overload used
-  `target_owner`/`target_repo` and filtered only on `(owner, repo)`, so it both
-  ignored tenancy and made PostgREST's overload resolution ambiguous. 0004 §6f
-  drops it and re-states the 0003 signature.
+Migrations retain the tenant-scoped `vector(768)` table and `search_repo_context`
+RPC so existing deployments can keep their database schema. The runtime
+`indexRepository` endpoint now reports that indexing is retired.
 
 ## Applying and verifying
 

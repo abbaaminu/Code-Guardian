@@ -23,7 +23,7 @@ describe("runAgentTask GitHub authorization", () => {
     expect(handlerStart).toBeGreaterThanOrEqual(0);
     expect(userTokenCheck).toBeGreaterThanOrEqual(0);
     expect(userTokenCheck).toBeLessThan(
-      handler.indexOf("geminiApiRateLimiter.tryTake(context.userId)"),
+      handler.indexOf("aiApiRateLimiter.tryTake(context.userId)"),
     );
     expect(handler.slice(0, handler.indexOf("// Step 1"))).toContain(
       "personal GitHub token is required",

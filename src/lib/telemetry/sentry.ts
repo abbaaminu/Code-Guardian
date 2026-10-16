@@ -240,14 +240,14 @@ export function captureException(
 /**
  * Times one engine pass and reports the measurement.
  *
- * Wrapped around each scan engine (see sast-engine.ts and the Gemini pass in
+ * Wrapped around each scan engine (see sast-engine.ts and the DeepSeek pass in
  * scan.functions.ts) so scan latency is observable and a regression — e.g. a
  * pathological input that makes the AST walk slow — shows up before users
  * report it. The measurement is sent as an `info` event tagged by engine, with
  * the raw duration in `extra.duration_ms` for grouping and alerting.
  */
 export async function withEngineTiming<T>(
-  engineName: "ast" | "heuristic" | "gemini",
+  engineName: "ast" | "heuristic" | "deepseek",
   fn: () => Promise<T> | T,
 ): Promise<T> {
   const start = performance.now();

@@ -4,12 +4,14 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { runLocalSAST } from "@/lib/sast-engine";
 import { buildSarifLog } from "@/lib/sarif";
-import { geminiApiRateLimiter } from "@/lib/rate-limiter";
+import { aiApiRateLimiter } from "@/lib/rate-limiter";
+import { withScanEngineError } from "@/lib/scan-engine-errors";
 import { withEngineTiming } from "@/lib/telemetry/sentry";
+import { isDeepSeekUnavailable, requestDeepSeekChat } from "@/lib/deepseek";
 import {
   parseCopilotResponse,
-  parseGeminiVulnerabilities,
-} from "@/lib/gemini-response";
+  parseAuditVulnerabilities,
+} from "@/lib/ai-response";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -90,7 +92,7 @@ function normalizeVulns(raw: unknown): Array<{
 
 // Local-engine findings share the same shape once normalized, so the DB insert
 // and the report/SARIF pipeline downstream don't need to know which engine
-// (AST, heuristic, or Gemini) produced a given row.
+// (AST, heuristic, or DeepSeek) produced a given row.
 function normalizeLocalFindings(
   findings: Awaited<ReturnType<typeof runLocalSAST>>,
   projectName: string,
@@ -131,19 +133,19 @@ function computeHealthScore(counts: {
   return Math.max(0, Math.min(100, 100 - penalty));
 }
 
-async function callGemini(
+async function callDeepSeek(
   project: string,
   fileType: string,
   code: string,
   policies: string[],
 ): Promise<unknown[]> {
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.DEEPSEEK_API_KEY;
   if (!apiKey)
     throw new Error(
-      "Security audit AI engine is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+      "Security audit AI engine is temporarily unconfigured. Set DEEPSEEK_API_KEY in the server environment.",
     );
 
-  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
   const systemPrompt = `You are SecurePulse, an enterprise, non-training-tier code security auditor.
 Analyze code for security vulnerabilities, secret exposure, and compliance violations aligned with: ${policies.join(", ") || "OWASP Top 10, CWE Top 25"}.
 
@@ -161,44 +163,16 @@ Language / File type: ${fileType}
 ${code}
 --- CODE END ---`;
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
-      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-      generationConfig: {
-        responseMimeType: "application/json",
-        temperature: 0.2,
-      },
-    }),
-  });
-
-  if (!res.ok) {
-    const body = await res.text();
-    if (res.status === 429)
-      throw new Error("Rate limit hit — please retry in a moment.");
-    if (
-      res.status === 401 ||
-      res.status === 403 ||
-      body.includes("API_KEY_INVALID")
-    ) {
-      throw new Error(
-        `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
-      );
-    }
-    throw new Error(`Gemini API error [${res.status}]: ${body.slice(0, 300)}`);
-  }
-
-  const data = (await res.json()) as {
-    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-  };
-  const content =
-    data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("") ??
-    "";
-  return parseGeminiVulnerabilities(content);
+  const content = await requestDeepSeekChat(
+    apiKey,
+    model,
+    [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    0.2,
+  );
+  return parseAuditVulnerabilities(content);
 }
 
 export const runScan = createServerFn({ method: "POST" })
@@ -206,20 +180,26 @@ export const runScan = createServerFn({ method: "POST" })
   .validator((input: unknown) => ScanInput.parse(input))
   .handler(async ({ data, context }) => {
     // H4: per-user rate limit before any work starts (this endpoint burns
-    // Gemini quota). Checked first so over-budget users don't even create a
+    // DeepSeek quota). Checked first so over-budget users don't even create a
     // scan row that will only fail later.
-    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+    if (!aiApiRateLimiter.tryTake(context.userId)) {
       throw new Error(
         "Rate limit reached — please wait a moment before running another AI-powered scan.",
       );
     }
 
     const supabase = await serverSupabase();
-    const { data: usage, error: usageError } = await supabase.rpc(
-      "increment_audit_usage",
-      { p_user_id: context.userId },
+    const { data: usage, error: usageError } = await withScanEngineError(
+      "Supabase RPC increment_audit_usage",
+      async () =>
+        await supabase.rpc("increment_audit_usage", {
+          p_user_id: context.userId,
+        }),
     );
     if (usageError) {
+      console.error("[Scan Engine Error]", usageError, {
+        endpoint: "Supabase RPC increment_audit_usage",
+      });
       throw new Error(`Unable to check audit quota: ${usageError.message}`);
     }
     if (!usage || !usage.success) {
@@ -259,17 +239,29 @@ export const runScan = createServerFn({ method: "POST" })
         data.project_name,
       );
 
-      // 2. AI engine for complex, contextual, business-logic vulnerabilities
+      // 2. DeepSeek for complex, contextual, business-logic vulnerabilities
       // that structural analysis alone can't reason about. Timed separately from
       // the local pass so it's obvious which engine owns a latency regression.
-      const rawAiFindings = await withEngineTiming("gemini", () =>
-        callGemini(
-          data.project_name,
-          data.file_type,
-          data.source_code,
-          policies,
-        ),
-      );
+      let rawAiFindings: unknown[] = [];
+      try {
+        rawAiFindings = await withEngineTiming("deepseek", () =>
+          callDeepSeek(
+            data.project_name,
+            data.file_type,
+            data.source_code,
+            policies,
+          ),
+        );
+      } catch (error) {
+        if (isDeepSeekUnavailable(error)) {
+          console.warn(
+            `[DeepSeek] Audit unavailable (HTTP ${error.status}); continuing with local AST/heuristic findings.`,
+            error,
+          );
+        } else {
+          throw error;
+        }
+      }
       const aiVulns = normalizeVulns(rawAiFindings);
 
       const vulns = [...localFindings, ...aiVulns];
@@ -433,24 +425,24 @@ const CopilotInput = z.object({
   file_type: z.string().min(1).max(40),
 });
 
-// SECURITY FIX: this endpoint proxies to the Gemini API using the server's own
+// SECURITY FIX: this endpoint proxies to the DeepSeek API using the server's own
 // API key. It requires a signed-in Supabase user (below), and every call is
 // additionally per-user rate limited (H4) so one account can't burn the shared
-// Gemini quota/budget.
+// DeepSeek quota/budget.
 export const copilotRemediate = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => CopilotInput.parse(input))
   .handler(async ({ data, context }) => {
-    if (!geminiApiRateLimiter.tryTake(context.userId)) {
+    if (!aiApiRateLimiter.tryTake(context.userId)) {
       throw new Error(
         "Rate limit reached — please wait a moment before asking the copilot again.",
       );
     }
 
-    const apiKey = process.env.GOOGLE_API_KEY;
+    const apiKey = process.env.DEEPSEEK_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "Copilot AI is temporarily unconfigured. Set GOOGLE_API_KEY in the server environment.",
+        "Copilot AI is temporarily unconfigured. Set DEEPSEEK_API_KEY in the server environment.",
       );
     }
 
@@ -470,44 +462,16 @@ Instruction: ${data.instruction}
 ${data.source_code}
 --- CODE END ---`;
 
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(apiKey)}`;
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        systemInstruction: { role: "system", parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.2,
-        },
-      }),
-    });
-    if (!res.ok) {
-      const body = await res.text();
-      if (res.status === 429)
-        throw new Error("Rate limit hit — please retry in a moment.");
-      if (
-        res.status === 401 ||
-        res.status === 403 ||
-        body.includes("API_KEY_INVALID")
-      ) {
-        throw new Error(
-          `Gemini rejected the configured API key (HTTP ${res.status}). Check GOOGLE_API_KEY.`,
-        );
-      }
-      throw new Error(
-        `Copilot API error [${res.status}]: ${body.slice(0, 300)}`,
-      );
-    }
-    const payload = (await res.json()) as {
-      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
-    };
-    const content =
-      payload.candidates?.[0]?.content?.parts
-        ?.map((p) => p.text ?? "")
-        .join("") ?? "";
+    const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
+    const content = await requestDeepSeekChat(
+      apiKey,
+      model,
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userPrompt },
+      ],
+      0.2,
+    );
     return parseCopilotResponse(content);
   });
 

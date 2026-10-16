@@ -3,7 +3,7 @@
 // endpoint that allows a VS Code extension or LSP engine to trigger instant
 // on-save scans."
 //
-// Deliberately runs ONLY the local AST/heuristic engine, not the Gemini AI
+// Deliberately runs ONLY the local AST/heuristic engine, not the DeepSeek AI
 // engine: on-save needs to return in well under a second for a good editor
 // experience, and a network round-trip to an LLM is both too slow for that
 // and too expensive to run on every keystroke-adjacent save. This is a
@@ -23,6 +23,10 @@ import type {} from "@tanstack/react-start";
 import { z } from "zod";
 import { runLocalSAST } from "@/lib/sast-engine";
 import { instantScanRateLimiter } from "@/lib/rate-limiter";
+import {
+  NETWORK_CONNECTION_ERROR,
+  withScanEngineError,
+} from "@/lib/scan-engine-errors";
 
 const InstantScanInput = z.object({
   file_type: z.string().min(1).max(40),
@@ -51,9 +55,15 @@ async function requireBearerUser(request: Request): Promise<string> {
   const { verifySupabaseToken } =
     await import("@/integrations/supabase/auth-middleware");
   try {
-    const { userId } = await verifySupabaseToken(token);
+    const { userId } = await withScanEngineError(
+      "Supabase auth.getClaims",
+      () => verifySupabaseToken(token),
+    );
     return userId;
   } catch (error) {
+    if (error instanceof Error && error.message === NETWORK_CONNECTION_ERROR) {
+      throw jsonError(NETWORK_CONNECTION_ERROR, 503);
+    }
     if (
       error instanceof Error &&
       error.message.startsWith("Missing Supabase environment variable(s):")
@@ -112,7 +122,9 @@ export const Route = createFileRoute("/api/scan/instant")({
             { headers: { "content-type": "application/json" } },
           );
         } catch (error) {
-          console.error("[instant scan] Scan failed:", error);
+          console.error("[Scan Engine Error]", error, {
+            endpoint: "Instant scan local SAST",
+          });
           return jsonError("Instant scan failed. Please try again.", 500);
         }
       },

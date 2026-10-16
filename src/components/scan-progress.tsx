@@ -74,7 +74,7 @@ function breakdown(counts: Record<Severity, number>): string {
  * returned:
  *
  *   engine 1 — the deterministic local pass, reported by its own HTTP response
- *   engine 2 — the Gemini pass, reported by the scan `runScan` persisted
+ *   engine 2 — the DeepSeek pass, reported by the scan `runScan` persisted
  *
  * There is deliberately no progress percentage: each engine is a single
  * request/response serverless call with no streaming or job to poll, so a
@@ -135,7 +135,7 @@ export function ScanProgress({
   if (phase === "running") {
     lines.push({
       tone: "info",
-      text: "engine 2 · Gemini contextual pass in flight (no streaming — findings arrive with the response)",
+      text: "engine 2 · DeepSeek contextual pass in flight (no streaming — findings arrive with the response)",
     });
   } else if (phase === "done" && result) {
     lines.push({

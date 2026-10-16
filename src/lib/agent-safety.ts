@@ -1,6 +1,6 @@
 // Safety validation for AI-proposed repository mutations (H1).
 //
-// The autonomous agent (agent.functions.ts) takes an instruction, asks Gemini
+// The autonomous agent (agent.functions.ts) takes an instruction, asks DeepSeek
 // for a remediation plan, and then writes the plan's edits to a real GitHub
 // repository through the Git Trees API. That is a lot of trust to put in an
 // LLM's free-text output, so every edit is validated *before* any blob, tree,

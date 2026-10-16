@@ -1,7 +1,7 @@
-// Per-user token-bucket rate limiter for expensive external calls (Gemini).
+// Per-user token-bucket rate limiter for expensive external calls (DeepSeek).
 //
 // WHY: `runScan`, `copilotRemediate`, and the autonomous agent all proxy to the
-// Gemini API using the server's own key. Requiring a signed-in user stops
+// DeepSeek API using the server's own key. Requiring a signed-in user stops
 // anonymous abuse but not one account hammering the API and burning quota. A
 // token bucket keyed by user id is a cheap, dependency-free ceiling until the
 // queue/Redis infra from SECURITY_AUDIT.md §6 exists — swap this for a Redis
@@ -104,17 +104,17 @@ export class PerUserRateLimiter {
 }
 
 /**
- * Shared budget across every Gemini-backed server function. Per-user budget:
+ * Shared budget across every DeepSeek-backed server function. Per-user budget:
  * burst of 6 calls, then 1 token every 10s (~6 calls/min sustained). Tune to
- * your Gemini quota / plan — this is a ceiling against quota-burning abuse, not
+ * your DeepSeek quota / plan — this is a ceiling against quota-burning abuse, not
  * a precise billing meter.
  */
-export const geminiApiRateLimiter = new PerUserRateLimiter({
+export const aiApiRateLimiter = new PerUserRateLimiter({
   capacity: 6,
   refillPerSecond: 1 / 10,
 });
 
-/** Local scans are cheaper than Gemini calls but still consume CPU per request. */
+/** Local scans are cheaper than DeepSeek calls but still consume CPU per request. */
 export const instantScanRateLimiter = new PerUserRateLimiter({
   capacity: 30,
   refillPerSecond: 1 / 2,

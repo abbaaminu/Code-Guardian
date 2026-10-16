@@ -184,7 +184,7 @@ const APP_CONTRACT: Record<
     ],
   },
   repo_embeddings: {
-    source: "src/lib/embedding.functions.ts and src/lib/agent.functions.ts",
+    source: "legacy schema retained after vector indexing retirement",
     columns: [
       "user_id",
       "owner",
@@ -389,16 +389,15 @@ describe("supabase migrations match the columns src/ actually uses", () => {
     );
   });
 
-  it("uses a vector dimension that matches the embedding model being called", () => {
+  it("retains the legacy vector schema without an active Google embedding caller", () => {
     const embeddingSource = readFileSync(
       path.join(repoRoot, "src", "lib", "embedding.functions.ts"),
       "utf8",
     );
-    // Google text-embedding-004 returns 768 dimensions, and neither call site
-    // overrides outputDimensionality. Changing the model breaks the insert with
-    // "expected 768 dimensions, not N", so the migration must change with it.
-    expect(embeddingSource).toContain("text-embedding-004");
-    expect(embeddingSource).not.toMatch(/outputDimensionality/i);
+    expect(embeddingSource).toContain(
+      "Repository vector indexing has been retired",
+    );
+    expect(embeddingSource).not.toContain("GOOGLE_API_KEY");
     expect(squash(migrationSql)).toContain("vector(768)");
   });
 });
@@ -510,7 +509,7 @@ describe("the unique keys the app's upserts depend on exist", () => {
   });
 });
 
-describe("the vector search RPC matches its one call site", () => {
+describe("the retired vector search RPC remains tenant-scoped", () => {
   const RPC_PARAMS = [
     "query_embedding",
     "match_threshold",
@@ -520,18 +519,12 @@ describe("the vector search RPC matches its one call site", () => {
     "match_user_id",
   ];
 
-  it("is called with the parameters the migrations declare", () => {
-    // src/lib/agent.functions.ts: supabase.rpc("search_repo_context", { ... })
-    // PostgREST resolves RPC arguments by name, so a rename on either side turns
-    // into "function public.search_repo_context(...) does not exist".
+  it("is no longer called by the agent and retains its migration parameters", () => {
     const agentSource = readFileSync(
       path.join(repoRoot, "src", "lib", "agent.functions.ts"),
       "utf8",
     );
-    expect(agentSource).toContain('rpc("search_repo_context"');
-    for (const param of RPC_PARAMS) {
-      expect(agentSource).toContain(`${param}:`);
-    }
+    expect(agentSource).not.toContain('rpc("search_repo_context"');
     for (const { sql } of migrations) {
       for (const param of RPC_PARAMS) {
         if (sql.includes("search_repo_context")) {

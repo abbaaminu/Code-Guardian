@@ -42,7 +42,7 @@ const SCANNABLE_EXTENSIONS = new Set([
 ]);
 
 const MAX_FILES = 25;
-const MAX_TOTAL_CHARS = 60000; // keep the Gemini payload reasonable
+const MAX_TOTAL_CHARS = 60000; // keep the AI provider payload reasonable
 
 /** Minimal GitHub API repo shape used by the connect panel. */
 interface GitHubRepo {
