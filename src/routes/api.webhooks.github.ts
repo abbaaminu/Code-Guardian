@@ -78,13 +78,43 @@ export const Route = createFileRoute("/api/webhooks/github")({
         const event = request.headers.get("x-github-event");
 
         if (event === "installation") {
-          // Installation lifecycle events are acknowledged but not persisted:
-          // there is no github_installations table in this schema, so there is
-          // nowhere truthful to store the id yet. Log it so the value is
-          // recoverable from logs when that table is added.
-          console.log(
-            `[github webhook] installation event received: ${rawBody.slice(0, 400)}`,
-          );
+          let installationEvent: {
+            action?: string;
+            installation?: { id?: number };
+          };
+          try {
+            installationEvent = JSON.parse(rawBody) as typeof installationEvent;
+          } catch {
+            return new Response("Invalid JSON payload", { status: 400 });
+          }
+          const installationId = installationEvent.installation?.id;
+          if (
+            installationId &&
+            ["deleted", "suspend", "unsuspend"].includes(
+              installationEvent.action ?? "",
+            )
+          ) {
+            try {
+              const { supabaseAdmin } =
+                await import("@/integrations/supabase/client.server");
+              const { error } = await supabaseAdmin
+                .from("user_repositories")
+                .update({
+                  active: installationEvent.action === "unsuspend",
+                  updated_at: new Date().toISOString(),
+                })
+                .eq("installation_id", installationId);
+              if (error) throw new Error(error.message);
+            } catch (error) {
+              console.error(
+                "[github webhook] Could not update installation authorization:",
+                error,
+              );
+              return new Response("Could not update installation", {
+                status: 500,
+              });
+            }
+          }
           return new Response("ok", { status: 202 });
         }
 

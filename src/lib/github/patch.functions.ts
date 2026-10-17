@@ -6,7 +6,8 @@ import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { applyVulnerabilityPatch } from "@/lib/scan-patch";
 import { isSafeRepoPath } from "@/lib/agent-safety";
 
-const PatchGithubFileInput = z.object({
+const RepositoryPatchInput = z.object({
+  scanId: z.string().uuid(),
   owner: z
     .string()
     .min(1)
@@ -17,6 +18,9 @@ const PatchGithubFileInput = z.object({
     .min(1)
     .max(100)
     .regex(/^[a-zA-Z0-9](?:[a-zA-Z0-9._-]*[a-zA-Z0-9])?$/),
+});
+
+const PatchGithubFileInput = RepositoryPatchInput.extend({
   filePath: z.string().min(1).max(512).refine(isSafeRepoPath),
   vulnerableCode: z.string().min(1).max(4000),
   fixedCode: z.string().min(1).max(4000),
@@ -46,6 +50,21 @@ async function githubError(response: Response): Promise<string> {
   return message;
 }
 
+export const authorizeGithubRepository = createServerFn({ method: "POST" })
+  .middleware([attachSupabaseAuth, requireSupabaseAuth])
+  .validator((input: unknown) => RepositoryPatchInput.parse(input))
+  .handler(async ({ data, context }) => {
+    const { authorizeGitHubRepository } =
+      await import("./repository-authorization.server");
+    await authorizeGitHubRepository(
+      context.userId,
+      data.scanId,
+      data.owner,
+      data.repo,
+    );
+    return { authorized: true };
+  });
+
 export const patchGithubFile = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
   .validator((input: unknown) => PatchGithubFileInput.parse(input))
@@ -54,17 +73,26 @@ export const patchGithubFile = createServerFn({ method: "POST" })
       throw new Error("The finding has an invalid line range.");
     }
 
-    const { getDecryptedRepoTokenServerOnly } =
-      await import("@/lib/vault/vault.functions");
-    const token = await getDecryptedRepoTokenServerOnly(
+    const { getAuthorizedInstallation } =
+      await import("./repository-authorization.server");
+    const installationId = await getAuthorizedInstallation(
       context.userId,
-      "github",
+      data.scanId,
+      data.owner,
+      data.repo,
     );
-    if (!token) {
-      throw new Error(
-        "Save a GitHub access token in your token vault before committing patches.",
+    const { getInstallationToken, hasRepositoryWritePermissions } =
+      await import("./app-auth");
+    const installationToken = await getInstallationToken(installationId, [
+      `${data.owner}/${data.repo}`,
+    ]);
+    if (!hasRepositoryWritePermissions(installationToken.permissions)) {
+      throw new Response(
+        "Forbidden: the GitHub App installation no longer has Contents and Pull requests write permissions.",
+        { status: 403 },
       );
     }
+    const token = installationToken.token;
 
     const baseUrl =
       `https://api.github.com/repos/${encodeURIComponent(data.owner)}/` +

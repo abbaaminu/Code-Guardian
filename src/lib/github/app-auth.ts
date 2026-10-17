@@ -16,10 +16,9 @@
 //                                     line in most secret managers, or base64
 //                                     it — decode however your platform expects)
 //        GITHUB_WEBHOOK_SECRET      — the webhook secret you set on the App
-//   3. Have users install the App on their repos/org; GitHub then calls the
-//      `installation` webhook with an installation_id you'll need to persist
-//      (e.g. a github_installations table keyed by user_id/org_id — not yet
-//      in this schema, add it alongside vault_secrets when you wire this up).
+//   3. Users authorize a repository from an owned scan. The server verifies
+//      the user's GitHub identity and installation through their encrypted
+//      vault token, then records the verified installation in user_repositories.
 //
 // This module implements the actual JWT (RS256) + installation-token exchange
 // correctly; what it can't do without your registered App is produce a real
@@ -71,6 +70,7 @@ export function signAppJwt(): string {
 export interface InstallationToken {
   token: string;
   expiresAt: string; // ISO 8601
+  permissions: Record<string, string>;
 }
 
 // Exchanges the App JWT for a short-lived installation access token scoped to
@@ -79,6 +79,7 @@ export interface InstallationToken {
 // under `expiresAt`) rather than calling this per-API-request.
 export async function getInstallationToken(
   installationId: number | string,
+  repositories?: string[],
 ): Promise<InstallationToken> {
   const jwt = signAppJwt();
   const res = await fetch(
@@ -88,8 +89,10 @@ export async function getInstallationToken(
       headers: {
         Authorization: `Bearer ${jwt}`,
         Accept: "application/vnd.github+json",
+        ...(repositories ? { "Content-Type": "application/json" } : {}),
         "X-GitHub-Api-Version": "2022-11-28",
       },
+      ...(repositories ? { body: JSON.stringify({ repositories }) } : {}),
     },
   );
   if (!res.ok) {
@@ -98,6 +101,37 @@ export async function getInstallationToken(
       `Failed to mint installation token [${res.status}]: ${body.slice(0, 300)}`,
     );
   }
-  const data = (await res.json()) as { token: string; expires_at: string };
-  return { token: data.token, expiresAt: data.expires_at };
+  const data = (await res.json()) as {
+    token: string;
+    expires_at: string;
+    permissions?: Record<string, string>;
+  };
+  return {
+    token: data.token,
+    expiresAt: data.expires_at,
+    permissions: data.permissions ?? {},
+  };
+}
+
+export function hasRepositoryWritePermissions(permissions: unknown): boolean {
+  if (
+    typeof permissions !== "object" ||
+    permissions === null ||
+    Array.isArray(permissions)
+  ) {
+    return false;
+  }
+  const grants = permissions as Record<string, unknown>;
+  const canWrite = (permission: string | undefined) =>
+    permission === "write" || permission === "admin";
+  return (
+    canWrite(
+      typeof grants.contents === "string" ? grants.contents : undefined,
+    ) &&
+    canWrite(
+      typeof grants.pull_requests === "string"
+        ? grants.pull_requests
+        : undefined,
+    )
+  );
 }

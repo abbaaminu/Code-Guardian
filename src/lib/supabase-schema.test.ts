@@ -29,6 +29,7 @@ const TABLES = [
   "vulnerabilities",
   "policies",
   "user_roles",
+  "user_repositories",
   "vault_secrets",
   "repo_embeddings",
 ] as const;
@@ -176,6 +177,18 @@ const APP_CONTRACT: Record<
     source: "src/lib/scan.functions.ts (requireAdminRole)",
     columns: ["user_id", "role"],
   },
+  user_repositories: {
+    source: "src/lib/github/repository-authorization.server.ts",
+    columns: [
+      "user_id",
+      "owner",
+      "repo_name",
+      "installation_id",
+      "active",
+      "permissions",
+      "updated_at",
+    ],
+  },
   vault_secrets: {
     source: "src/lib/vault/vault.functions.ts",
     columns: [
@@ -203,8 +216,7 @@ const APP_CONTRACT: Record<
   },
 };
 
-/** The owner-scoped policies the migrations create on purpose. 0004's sweep must
- *  skip exactly these by name, or it would delete its own access control. */
+/** The owner-scoped policies the migrations create on purpose. */
 const CANONICAL_POLICIES = [
   "scans_select_own",
   "scans_insert_own",
@@ -213,9 +225,21 @@ const CANONICAL_POLICIES = [
   "vulnerabilities_select_via_scan",
   "policies_select_authenticated",
   "user_roles_select_own",
+  "user_repositories_select_own",
   "vault_secrets_owner_only",
   "repo_embeddings_owner_only",
 ];
+const RECONCILIATION_SWEEP_TABLES = [
+  "scans",
+  "vulnerabilities",
+  "policies",
+  "user_roles",
+  "vault_secrets",
+  "repo_embeddings",
+];
+const RECONCILIATION_SWEEP_POLICIES = CANONICAL_POLICIES.filter(
+  (policy) => policy !== "user_repositories_select_own",
+);
 
 /** Replays `create policy` / `drop policy` in migration order and returns the
  *  policies that survive, so "a later file drops the permissive policy an earlier
@@ -301,6 +325,7 @@ describe("supabase migrations match the columns src/ actually uses", () => {
     expect(createTableBody(migrationSql, "vault_secrets")).not.toBe("");
     expect(createTableBody(migrationSql, "user_roles")).not.toBe("");
     expect(createTableBody(migrationSql, "repo_embeddings")).not.toBe("");
+    expect(createTableBody(migrationSql, "user_repositories")).not.toBe("");
   });
 
   it("defines the quota and Paddle subscription contracts", () => {
@@ -413,7 +438,7 @@ describe("row level security covers every table the app touches", () => {
     expect(migrationSql).not.toMatch(/disable row level security/i);
   });
 
-  it("enables row level security on all six tables", () => {
+  it("enables row level security on every application table", () => {
     const squashed = squash(migrationSql);
     for (const table of TABLES) {
       expect(squashed).toMatch(
@@ -457,10 +482,10 @@ describe("row level security covers every table the app touches", () => {
     expect(squashed).toMatch(/coalesce\(with_check, 'true'\) = 'true'/);
     expect(squashed).toContain("execute format('drop policy %I on %I.%I'");
 
-    for (const table of TABLES) {
+    for (const table of RECONCILIATION_SWEEP_TABLES) {
       expect(squashed).toContain(`'${table}'`);
     }
-    for (const policy of CANONICAL_POLICIES) {
+    for (const policy of RECONCILIATION_SWEEP_POLICIES) {
       expect(squashed).toContain(`'${policy}'`);
     }
   });

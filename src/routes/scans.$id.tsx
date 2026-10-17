@@ -17,7 +17,10 @@ import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import { SEVERITIES } from "@/lib/severity";
 import { applyVulnerabilityPatch } from "@/lib/scan-patch";
-import { patchGithubFile } from "@/lib/github/patch.functions";
+import {
+  authorizeGithubRepository,
+  patchGithubFile,
+} from "@/lib/github/patch.functions";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
@@ -74,6 +77,7 @@ export const Route = createFileRoute("/scans/$id")({
 
 function ScanReport() {
   const { scanId } = Route.useLoaderData();
+  const authorizeRepository = useServerFn(authorizeGithubRepository);
   const commitGithubPatch = useServerFn(patchGithubFile);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
@@ -236,6 +240,36 @@ function ScanReport() {
     const isRepositoryScan = Boolean(
       data.scan.repo_owner && data.scan.repo_name,
     );
+    let githubToastId: ReturnType<typeof toast.loading> | undefined;
+    if (isRepositoryScan) {
+      if (!v.file_path) {
+        toast.error("Patch not committed", {
+          description: "This finding does not identify a repository file path.",
+        });
+        return;
+      }
+
+      githubToastId = toast.loading("Verifying GitHub App access...");
+      setCommittingId(v.id);
+      try {
+        await authorizeRepository({
+          data: {
+            scanId,
+            owner: data.scan.repo_owner!,
+            repo: data.scan.repo_name!,
+          },
+        });
+      } catch (error) {
+        toast.error("GitHub authorization required", {
+          id: githubToastId,
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+        setCommittingId(null);
+        return;
+      }
+    }
+
     const result = applyVulnerabilityPatch(
       displayedCode,
       v.vulnerable_code_block,
@@ -250,21 +284,19 @@ function ScanReport() {
 
     let replacementLineCount = result.success ? result.replacementLineCount : 0;
     if (isRepositoryScan) {
-      if (!v.file_path) {
-        toast.error("Patch not committed", {
-          description: "This finding does not identify a repository file path.",
-        });
-        return;
-      }
-
-      const toastId = toast.loading("Creating Pull Request...");
-      setCommittingId(v.id);
+      const toastId =
+        githubToastId ?? toast.loading("Creating Pull Request...");
+      toast.loading("Creating Pull Request...", { id: toastId });
       let pullRequestUrl: string | null = null;
       try {
+        const repository = {
+          scanId,
+          owner: data.scan.repo_owner!,
+          repo: data.scan.repo_name!,
+        };
         const committed = await commitGithubPatch({
           data: {
-            owner: data.scan.repo_owner!,
-            repo: data.scan.repo_name!,
+            ...repository,
             filePath: v.file_path,
             vulnerableCode: v.vulnerable_code_block,
             fixedCode: v.fixed_code_block,

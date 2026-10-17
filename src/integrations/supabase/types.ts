@@ -228,6 +228,36 @@ export type Database = {
         };
         Relationships: [];
       };
+      user_repositories: {
+        Row: {
+          user_id: string;
+          owner: string;
+          repo_name: string;
+          installation_id: number;
+          active: boolean;
+          permissions: Json;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          owner: string;
+          repo_name: string;
+          installation_id: number;
+          active?: boolean;
+          permissions?: Json;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          owner?: string;
+          repo_name?: string;
+          installation_id?: number;
+          active?: boolean;
+          permissions?: Json;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       vault_secrets: {
         Row: {
           id: string;

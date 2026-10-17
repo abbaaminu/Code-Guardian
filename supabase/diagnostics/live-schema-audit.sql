@@ -39,7 +39,7 @@ begin
 
   foreach t in array array[
     'scans', 'vulnerabilities', 'policies',
-    'user_roles', 'vault_secrets', 'repo_embeddings',
+    'user_roles', 'user_repositories', 'vault_secrets', 'repo_embeddings',
     'usage_quotas', 'paddle_subscriptions', 'paddle_webhook_events',
     'webhook_events'
   ]
@@ -149,6 +149,7 @@ begin
       ('scans', 'project_name'), ('scans', 'file_type'), ('scans', 'status'),
       ('scans', 'source_code'), ('scans', 'user_id'), ('scans', 'health_score'),
       ('scans', 'vulnerabilities_count'), ('scans', 'created_at'),
+      ('scans', 'repo_owner'), ('scans', 'repo_name'),
       ('vulnerabilities', 'scan_id'), ('vulnerabilities', 'title'),
       ('vulnerabilities', 'severity'), ('vulnerabilities', 'cwe_id'),
       ('vulnerabilities', 'vulnerable_code_block'),
@@ -157,6 +158,11 @@ begin
       ('vulnerabilities', 'line_start'), ('vulnerabilities', 'line_end'),
       ('policies', 'name'), ('policies', 'category'), ('policies', 'enabled'),
       ('user_roles', 'user_id'), ('user_roles', 'role'),
+      ('user_repositories', 'user_id'), ('user_repositories', 'owner'),
+      ('user_repositories', 'repo_name'),
+      ('user_repositories', 'installation_id'),
+      ('user_repositories', 'active'), ('user_repositories', 'permissions'),
+      ('user_repositories', 'updated_at'),
       ('vault_secrets', 'user_id'), ('vault_secrets', 'provider'),
       ('vault_secrets', 'label'), ('vault_secrets', 'encrypted_token'),
       ('vault_secrets', 'iv'), ('vault_secrets', 'auth_tag'),
@@ -231,7 +237,7 @@ begin
     where con.contype = 'f'
       and c.relname in (
         'scans', 'vulnerabilities', 'policies',
-        'user_roles', 'vault_secrets', 'repo_embeddings'
+        'user_roles', 'user_repositories', 'vault_secrets', 'repo_embeddings'
       )
   loop
     insert into diag values (
