@@ -6,6 +6,7 @@
 | `migrations/0004_reconcile_live_drift.sql`            | Reconciles the live database with the code — see below. Idempotent; safe to re-run.                                                                                                                                      |
 | `migrations/0005_saas_metering_and_paddle.sql`        | Adds signup trial credits, atomic audit quotas, subscription state, and Paddle webhook RPCs.                                                                                                                             |
 | `migrations/0006_atomic_quota_and_webhook_events.sql` | Returns authoritative quota JSON and transactionally claims Paddle webhook event IDs.                                                                                                                                    |
+| `migrations/0007_scan_repository_origin.sql` | Adds optional repository owner/name metadata to scans created from a connected repository. |
 | `diagnostics/live-schema-audit.sql`                   | **Read-only.** Prints one table of what is actually in the database: columns, RLS state, constraints, indexes, policies, the RPC overloads, and every app-required column that is missing. Run it before and after 0004. |
 | `../src/lib/supabase-schema.test.ts`                  | Static guard that the SQL in this directory still provides every column, key and policy the code in `src/lib` uses.                                                                                                      |
 | `../src/integrations/supabase/types.ts`               | Supabase client row/insert/update contracts. Keep aligned with the migrations and run `npx tsc --noEmit` after schema changes.                                                                                           |
@@ -58,6 +59,7 @@ prints. Everything below is what the code requires of them.
 | `health_score`             | update 271                                          | 0004 §2a                   | ok                                                                                      |
 | `vulnerabilities_count`    | update 272 (`countBySeverity`)                      | 0004 §2a (`jsonb`)         | ok — `jsonb` matches `Record<Severity, number>`                                         |
 | `created_at`               | `select` + `.order()` 293/296                       | 0004 §2a                   | ok                                                                                      |
+| `repo_owner`, `repo_name`  | insert 225-226                                       | 0007                       | ok, nullable for scans not associated with a repository                                 |
 | `language`                 | nothing                                             | —                          | dropped by 0004 §2b after `file_type` is backfilled from it                             |
 | `threat_level`, `findings` | nothing in `src/`                                   | bootstrap/ad-hoc           | unused; left in place so no data is destroyed, optional drops are commented in 0004 §2b |
 

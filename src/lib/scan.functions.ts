@@ -1,7 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
+import type { Database } from "@/integrations/supabase/types";
 import { runLocalSAST } from "@/lib/sast-engine";
 import { buildSarifLog } from "@/lib/sarif";
 import { aiApiRateLimiter } from "@/lib/rate-limiter";
@@ -494,8 +496,7 @@ ${data.source_code}
 //   insert into public.user_roles (user_id, role)
 //   values ('<auth-user-uuid>', 'admin');
 async function requireAdminRole(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  supabase: any,
+  supabase: SupabaseClient<Database>,
   userId: string,
 ): Promise<void> {
   const { data, error } = await supabase

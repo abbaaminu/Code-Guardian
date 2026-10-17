@@ -116,12 +116,16 @@ function columnsOf(table: string): Set<string> {
     if (name) columns.add(name.toLowerCase());
   }
 
-  const addColumn = new RegExp(
-    `alter table\\s+(?:public\\.)?${table}\\s+add column if not exists\\s+"?([a-z_][a-z0-9_]*)"?`,
+  const alterTable = new RegExp(
+    `alter table\\s+(?:public\\.)?${table}\\b([^;]*);`,
     "gi",
   );
-  for (const match of migrationSql.matchAll(addColumn)) {
-    columns.add(match[1].toLowerCase());
+  for (const statement of migrationSql.matchAll(alterTable)) {
+    for (const match of statement[1].matchAll(
+      /add column if not exists\s+"?([a-z_][a-z0-9_]*)"?/gi,
+    )) {
+      columns.add(match[1].toLowerCase());
+    }
   }
 
   return columns;
@@ -144,6 +148,8 @@ const APP_CONTRACT: Record<
       "health_score",
       "vulnerabilities_count",
       "created_at",
+      "repo_owner",
+      "repo_name",
     ],
   },
   vulnerabilities: {
