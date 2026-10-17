@@ -18,9 +18,41 @@ describe("applyVulnerabilityPatch", () => {
     });
   });
 
-  it("rejects a snippet that does not match the selected source lines", () => {
+  it("matches spacing differences and indentation while preserving target indentation", () => {
     const result = applyVulnerabilityPatch(
-      "const value = query;\nsend(value);",
+      "function run() {\n    send( value );\n}",
+      "send(value);",
+      "send(escape(value));",
+      2,
+      2,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      code: "function run() {\n    send(escape(value));\n}",
+      replacementLineCount: 1,
+    });
+  });
+
+  it("matches snippets after line drift and normalizes CRLF patch text", () => {
+    const result = applyVulnerabilityPatch(
+      "first();\r\n  send( value );\r\nlast();\r\n",
+      "\r\nsend(value);\r\n",
+      "\r\nsend(escape(value));\r\n",
+      1,
+      1,
+    );
+
+    expect(result).toEqual({
+      success: true,
+      code: "first();\r\n  send(escape(value));\r\nlast();\r\n",
+      replacementLineCount: 1,
+    });
+  });
+
+  it("rejects a vulnerable snippet that is absent from the source", () => {
+    const result = applyVulnerabilityPatch(
+      "const value = query;\nsend(other);",
       "send(value);",
       "send(escape(value));",
       1,

@@ -9,6 +9,7 @@ interface ConnectRepositoryPanelProps {
     project_name: string;
     file_type: string;
     source_code: string;
+    repository?: { owner: string; repo: string };
   }) => void;
   onSelectRepo?: (repoUrl: string, repoName: string) => void;
 }
@@ -211,6 +212,10 @@ export function ConnectRepositoryPanel({
         project_name: repo.name,
         file_type: repo.language || "Repository",
         source_code: sourceCode,
+        repository: {
+          owner: repo.owner?.login ?? username,
+          repo: repo.name,
+        },
       });
     } catch (err) {
       setError(

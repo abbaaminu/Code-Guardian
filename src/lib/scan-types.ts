@@ -40,6 +40,8 @@ export interface ScanReport {
   health_score: number;
   vulnerabilities_count: Record<Severity, number>;
   source_code: string;
+  repo_owner: string | null;
+  repo_name: string | null;
   created_at: string;
 }
 

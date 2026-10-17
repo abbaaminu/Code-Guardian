@@ -17,6 +17,8 @@ import { toast } from "sonner";
 import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
 import { SEVERITIES } from "@/lib/severity";
 import { applyVulnerabilityPatch } from "@/lib/scan-patch";
+import { patchGithubFile } from "@/lib/github/patch.functions";
+import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 export interface ScanReportLoaderData {
@@ -72,6 +74,7 @@ export const Route = createFileRoute("/scans/$id")({
 
 function ScanReport() {
   const { scanId } = Route.useLoaderData();
+  const commitGithubPatch = useServerFn(patchGithubFile);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [appliedPatches, setAppliedPatches] = useState<
@@ -82,6 +85,7 @@ function ScanReport() {
   >({});
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const [liveCode, setLiveCode] = useState<string | null>(null);
+  const [committingId, setCommittingId] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { data, isLoading, isError, refetch } = useScanReportQuery(scanId);
@@ -197,7 +201,7 @@ function ScanReport() {
     setActiveId((cur) => (cur === vulnId ? null : vulnId));
   };
 
-  const handleApply = (v: VulnCardData) => {
+  const handleApply = async (v: VulnCardData) => {
     if (!v.line_start || !v.line_end) {
       toast.error("Patch not applied", {
         description: "No valid line range is available for this finding.",
@@ -229,6 +233,9 @@ function ScanReport() {
       );
     const startLine = v.line_start + precedingPatches;
     const endLine = v.line_end + precedingPatches;
+    const isRepositoryScan = Boolean(
+      data.scan.repo_owner && data.scan.repo_name,
+    );
     const result = applyVulnerabilityPatch(
       displayedCode,
       v.vulnerable_code_block,
@@ -236,33 +243,78 @@ function ScanReport() {
       startLine,
       endLine,
     );
-    if (!result.success) {
+    if (!result.success && !isRepositoryScan) {
       toast.error("Patch not applied", { description: result.reason });
       return;
     }
 
-    setLiveCode(result.code);
+    let replacementLineCount = result.success ? result.replacementLineCount : 0;
+    if (isRepositoryScan) {
+      if (!v.file_path) {
+        toast.error("Patch not committed", {
+          description: "This finding does not identify a repository file path.",
+        });
+        return;
+      }
+
+      const toastId = toast.loading("Creating Pull Request...");
+      setCommittingId(v.id);
+      let pullRequestUrl: string | null = null;
+      try {
+        const committed = await commitGithubPatch({
+          data: {
+            owner: data.scan.repo_owner!,
+            repo: data.scan.repo_name!,
+            filePath: v.file_path,
+            vulnerableCode: v.vulnerable_code_block,
+            fixedCode: v.fixed_code_block,
+            startLine,
+            endLine,
+          },
+        });
+        replacementLineCount = committed.replacementLineCount;
+        pullRequestUrl = committed.pullRequestUrl;
+      } catch (error) {
+        toast.error("Could not open GitHub Pull Request", {
+          id: toastId,
+          description:
+            error instanceof Error ? error.message : "Please try again.",
+        });
+        return;
+      } finally {
+        setCommittingId(null);
+      }
+      toast.success("Pull Request successfully opened!", {
+        id: toastId,
+        description:
+          pullRequestUrl ?? `${v.file_path} was committed to a fix branch.`,
+      });
+    }
+
+    if (result.success) setLiveCode(result.code);
     setAppliedPatches((prev) => ({
       ...prev,
       [v.id]: {
         startLine: v.line_start!,
         endLine: v.line_end!,
-        replacementLineCount: result.replacementLineCount,
+        replacementLineCount,
       },
     }));
     setApplied((prev) => ({ ...prev, [v.id]: true }));
     const flash = new Set<number>();
     for (
       let line = startLine;
-      line < startLine + result.replacementLineCount;
+      line < startLine + replacementLineCount;
       line++
     ) {
       flash.add(line);
     }
     setFlashLines(flash);
-    toast.success("Patch applied to displayed source", {
-      description: `Replaced the exact vulnerable snippet at lines ${startLine}-${endLine}.`,
-    });
+    if (!data.scan.repo_owner || !data.scan.repo_name) {
+      toast.success("Patch applied to displayed source", {
+        description: `Replaced the vulnerable snippet at lines ${startLine}-${endLine}.`,
+      });
+    }
     setTimeout(() => setFlashLines(new Set()), 1500);
   };
 
@@ -376,6 +428,8 @@ function ScanReport() {
                     vuln={v}
                     expanded={activeId === v.id}
                     applied={!!applied[v.id]}
+                    applying={committingId === v.id}
+                    busy={committingId !== null}
                     onToggle={() => handleToggle(v.id)}
                     onApply={() => handleApply(v)}
                   />

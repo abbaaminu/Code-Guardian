@@ -80,6 +80,8 @@ export type Database = {
           status: string;
           source_code: string;
           user_id: string;
+          repo_owner: string | null;
+          repo_name: string | null;
           health_score: number;
           vulnerabilities_count: {
             critical: number;
@@ -96,6 +98,8 @@ export type Database = {
           status: string;
           source_code: string;
           user_id: string;
+          repo_owner?: string | null;
+          repo_name?: string | null;
           health_score?: number;
           vulnerabilities_count?: {
             critical: number;
@@ -112,6 +116,8 @@ export type Database = {
           status?: string;
           source_code?: string;
           user_id?: string;
+          repo_owner?: string | null;
+          repo_name?: string | null;
           health_score?: number;
           vulnerabilities_count?: {
             critical: number;

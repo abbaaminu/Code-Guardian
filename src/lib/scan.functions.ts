@@ -21,6 +21,12 @@ const ScanInput = z.object({
   project_name: z.string().min(1).max(120),
   file_type: z.string().min(1).max(40),
   source_code: z.string().min(1).max(60000),
+  repository: z
+    .object({
+      owner: z.string().min(1).max(39),
+      repo: z.string().min(1).max(100),
+    })
+    .optional(),
 });
 
 interface VulnRaw {
@@ -224,6 +230,8 @@ export const runScan = createServerFn({ method: "POST" })
         status: "scanning",
         source_code: data.source_code,
         user_id: context.userId,
+        repo_owner: data.repository?.owner ?? null,
+        repo_name: data.repository?.repo ?? null,
       })
       .select("id")
       .single();

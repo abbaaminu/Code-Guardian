@@ -125,6 +125,7 @@ function Dashboard() {
       project_name: string;
       file_type: string;
       source_code: string;
+      repository?: { owner: string; repo: string };
     }) => {
       // Engine 1 (deterministic local pass) is dispatched directly from the
       // browser against POST /api/scan/instant, in parallel with the AI pass.

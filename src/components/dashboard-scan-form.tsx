@@ -91,6 +91,7 @@ export interface ScanFormValues {
   project_name: string;
   file_type: string;
   source_code: string;
+  repository?: { owner: string; repo: string };
 }
 
 export function ScanForm({

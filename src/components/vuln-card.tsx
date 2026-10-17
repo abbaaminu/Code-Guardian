@@ -12,6 +12,7 @@ import {
   ChevronDown,
   GitCompareArrows,
   Check,
+  Loader2,
 } from "lucide-react";
 import type { ScanVulnerability } from "@/lib/scan-types";
 
@@ -26,6 +27,8 @@ interface Props {
   vuln: VulnCardData;
   expanded: boolean;
   applied: boolean;
+  applying?: boolean;
+  busy?: boolean;
   onToggle: () => void;
   onApply: () => void;
 }
@@ -107,7 +110,15 @@ function AlignedDiff({ rows }: { rows: DiffRow[] }) {
 }
 
 export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
-  { vuln, expanded, applied, onToggle, onApply },
+  {
+    vuln,
+    expanded,
+    applied,
+    applying = false,
+    busy = false,
+    onToggle,
+    onApply,
+  },
   ref,
 ) {
   const [diffOpen, setDiffOpen] = useState(true);
@@ -204,10 +215,15 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
             <Button
               size="sm"
               onClick={onApply}
-              disabled={applied || !vuln.fixed_code_block}
+              disabled={applied || busy || !vuln.fixed_code_block}
               className="gap-1.5 bg-primary text-primary-foreground hover:opacity-90"
             >
-              {applied ? (
+              {applying ? (
+                <>
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Creating PR…
+                </>
+              ) : applied ? (
                 <>
                   <Check className="h-3.5 w-3.5" /> Applied
                 </>

@@ -13,6 +13,33 @@ function sameIgnoringWhitespace(left: string, right: string): boolean {
   return left.replace(/\s+/g, "") === right.replace(/\s+/g, "");
 }
 
+function trimBlankBoundaryLines(lines: string[]): string[] {
+  let start = 0;
+  let end = lines.length;
+  while (start < end && !lines[start].trim()) start++;
+  while (end > start && !lines[end - 1].trim()) end--;
+  return lines.slice(start, end);
+}
+
+function commonIndent(lines: string[]): string {
+  const indents = lines
+    .filter((line) => line.trim())
+    .map((line) => line.match(/^[\t ]*/)?.[0] ?? "");
+  if (indents.length === 0) return "";
+
+  return indents.reduce((common, indent) => {
+    let length = 0;
+    while (
+      length < common.length &&
+      length < indent.length &&
+      common[length] === indent[length]
+    ) {
+      length++;
+    }
+    return common.slice(0, length);
+  });
+}
+
 export function applyVulnerabilityPatch(
   source: string,
   vulnerableCode: string,
@@ -30,7 +57,7 @@ export function applyVulnerabilityPatch(
   }
 
   const vulnerable = normalizeLineEndings(vulnerableCode);
-  const fixed = normalizeLineEndings(fixedCode).replace(/\n+$/, "");
+  const fixed = normalizeLineEndings(fixedCode);
   if (!vulnerable.trim() || !fixed.trim()) {
     return {
       success: false,
@@ -53,63 +80,83 @@ export function applyVulnerabilityPatch(
     };
   }
 
-  const sourceLines = source.split(/\r\n|\n|\r/);
-  const vulnerableLines = vulnerable.split("\n");
-  const fixedLines = fixed.split("\n");
+  const normalizedSource = normalizeLineEndings(source);
+  const sourceLines = normalizedSource.split("\n");
+  const vulnerableLines = trimBlankBoundaryLines(vulnerable.split("\n"));
+  const fixedLines = trimBlankBoundaryLines(fixed.split("\n"));
   const startIndex = startLine - 1;
-  const endIndex = endLine;
-  if (endIndex > sourceLines.length) {
-    return {
-      success: false,
-      reason: "The finding's line range is outside the source.",
-    };
-  }
 
-  const selectedLines = sourceLines
-    .slice(startIndex, endIndex)
-    .map((line) => line.replace(/\r$/, ""));
-  if (
-    selectedLines.length !== vulnerableLines.length ||
-    selectedLines.some((line, index) => line !== vulnerableLines[index])
-  ) {
-    return {
-      success: false,
-      reason:
-        "The vulnerable snippet does not exactly match the displayed source at the finding's lines.",
-    };
-  }
+  const matchesAt = (index: number) =>
+    vulnerableLines.every((line, offset) => {
+      const sourceLine = sourceLines[index + offset];
+      return (
+        sourceLine !== undefined && sameIgnoringWhitespace(sourceLine, line)
+      );
+    });
 
-  let occurrences = 0;
-  for (let i = 0; i <= sourceLines.length - vulnerableLines.length; i++) {
-    if (
-      vulnerableLines.every(
-        (line, offset) => sourceLines[i + offset].replace(/\r$/, "") === line,
-      )
+  const candidates: number[] = [];
+  const window = 20;
+  const first = Math.max(0, startIndex - window);
+  const last = Math.min(
+    sourceLines.length - vulnerableLines.length,
+    startIndex + window,
+  );
+  for (let index = first; index <= last; index++) {
+    if (matchesAt(index)) candidates.push(index);
+  }
+  if (candidates.length === 0) {
+    for (
+      let index = 0;
+      index <= sourceLines.length - vulnerableLines.length;
+      index++
     ) {
-      occurrences++;
-      if (occurrences > 1) {
-        return {
-          success: false,
-          reason:
-            "The vulnerable snippet appears more than once, so the replacement is ambiguous.",
-        };
-      }
+      if (matchesAt(index)) candidates.push(index);
     }
   }
 
+  if (candidates.length === 0) {
+    return {
+      success: false,
+      reason:
+        "The vulnerable snippet could not be matched in the displayed source near the finding's lines.",
+    };
+  }
+
+  if (candidates.length > 1) {
+    return {
+      success: false,
+      reason:
+        "The vulnerable snippet appears more than once near the finding, so the replacement is ambiguous.",
+    };
+  }
+
+  const matchIndex = candidates[0];
+  const matchEndIndex = matchIndex + vulnerableLines.length;
+  const selectedLines = sourceLines.slice(matchIndex, matchEndIndex);
+  const targetIndent = commonIndent(selectedLines);
+  const replacementIndent = commonIndent(fixedLines);
+  const adjustedFixedLines = fixedLines.map((line) => {
+    if (!line.trim()) return line;
+    const withoutIndent = line.startsWith(replacementIndent)
+      ? line.slice(replacementIndent.length)
+      : line.trimStart();
+    return targetIndent + withoutIndent;
+  });
+  const hadTrailingNewline = normalizedSource.endsWith("\n");
+  const updatedLines = [
+    ...sourceLines.slice(0, matchIndex),
+    ...adjustedFixedLines,
+    ...sourceLines.slice(matchEndIndex),
+  ];
+  if (!hadTrailingNewline && updatedLines.at(-1) === "") updatedLines.pop();
   const newline = source.includes("\r\n")
     ? "\r\n"
     : source.includes("\r")
       ? "\r"
       : "\n";
-  const updatedLines = [
-    ...sourceLines.slice(0, startIndex),
-    ...fixedLines,
-    ...sourceLines.slice(endIndex),
-  ];
   return {
     success: true,
     code: updatedLines.join(newline),
-    replacementLineCount: fixedLines.length,
+    replacementLineCount: adjustedFixedLines.length,
   };
 }
