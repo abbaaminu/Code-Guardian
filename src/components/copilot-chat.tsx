@@ -1,9 +1,8 @@
 import { useState, useRef, useEffect, useMemo } from "react";
-import { useServerFn } from "@tanstack/react-start";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { copilotRemediate } from "@/lib/scan.functions";
 import { diffLines, type DiffRow } from "@/lib/diff";
+import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
   Bot,
@@ -26,13 +25,58 @@ type Msg =
       updatedCode: string;
       diffOpen: boolean;
       applied: boolean;
+      streaming?: boolean;
     };
+
+interface CopilotResult {
+  updated_code: string;
+  summary: string;
+  changes: string[];
+}
+
+type CopilotStreamEvent =
+  | { type: "delta"; delta: string }
+  | { type: "done"; result: CopilotResult }
+  | { type: "error"; message: string };
 
 const SUGGESTIONS = [
   "Fix the SQL injection vulnerability",
   "Replace weak hashing with bcrypt",
   "Sanitize all user-provided HTML inputs",
 ];
+
+function readPartialSummary(content: string): string {
+  const marker = /"summary"\s*:\s*"/.exec(content);
+  if (!marker) return "";
+
+  const start = marker.index + marker[0].length;
+  let encoded = "";
+  for (let index = start; index < content.length; index++) {
+    const char = content[index];
+    if (char === '"') break;
+    if (char === "\\") {
+      const escape = content[index + 1];
+      if (!escape) break;
+      if (escape === "u") {
+        const unicode = content.slice(index + 2, index + 6);
+        if (!/^[\da-f]{4}$/i.test(unicode)) break;
+        encoded += content.slice(index, index + 6);
+        index += 5;
+      } else {
+        encoded += content.slice(index, index + 2);
+        index++;
+      }
+    } else {
+      encoded += char;
+    }
+  }
+
+  try {
+    return JSON.parse(`"${encoded}"`) as string;
+  } catch {
+    return "";
+  }
+}
 
 function MiniDiff({ rows }: { rows: DiffRow[] }) {
   return (
@@ -118,7 +162,7 @@ function AssistantBubble({
       </div>
       <div className="min-w-0 flex-1 space-y-2">
         <div className="rounded-lg rounded-tl-sm border border-border/60 bg-muted/20 px-3 py-2 text-[12px] leading-relaxed">
-          {msg.summary}
+          {msg.summary || "Receiving streamed response…"}
           {msg.changes.length > 0 && (
             <ul className="mt-1.5 space-y-0.5 text-[11px] text-muted-foreground">
               {msg.changes.map((c, i) => (
@@ -130,28 +174,30 @@ function AssistantBubble({
             </ul>
           )}
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          <button
-            onClick={onToggleDiff}
-            className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[10.5px] hover:bg-muted/60"
-          >
-            <GitCompareArrows className="h-3 w-3" />
-            {msg.diffOpen ? "Hide" : "Review"} changes
-            <span className="ml-1 rounded bg-primary/20 px-1 text-[9px] text-primary">
-              {changedCount}
-            </span>
-          </button>
-          <Button
-            size="sm"
-            onClick={onApply}
-            disabled={msg.applied || msg.updatedCode === currentCode}
-            className="h-7 gap-1 bg-primary px-2 text-[11px] text-primary-foreground hover:opacity-90"
-          >
-            <Wand2 className="h-3 w-3" />
-            {msg.applied ? "Applied" : "Apply to Editor"}
-          </Button>
-        </div>
-        {msg.diffOpen && <MiniDiff rows={rows} />}
+        {!msg.streaming && (
+          <div className="flex flex-wrap gap-1.5">
+            <button
+              onClick={onToggleDiff}
+              className="inline-flex items-center gap-1 rounded-md border border-border/60 bg-muted/30 px-2 py-1 text-[10.5px] hover:bg-muted/60"
+            >
+              <GitCompareArrows className="h-3 w-3" />
+              {msg.diffOpen ? "Hide" : "Review"} changes
+              <span className="ml-1 rounded bg-primary/20 px-1 text-[9px] text-primary">
+                {changedCount}
+              </span>
+            </button>
+            <Button
+              size="sm"
+              onClick={onApply}
+              disabled={msg.applied || msg.updatedCode === currentCode}
+              className="h-7 gap-1 bg-primary px-2 text-[11px] text-primary-foreground hover:opacity-90"
+            >
+              <Wand2 className="h-3 w-3" />
+              {msg.applied ? "Applied" : "Apply to Editor"}
+            </Button>
+          </div>
+        )}
+        {!msg.streaming && msg.diffOpen && <MiniDiff rows={rows} />}
       </div>
     </div>
   );
@@ -161,16 +207,19 @@ export function CopilotChat({
   sourceCode,
   fileType,
   onApplyCode,
+  context,
+  onRequestSourceInput,
 }: {
   sourceCode: string;
   fileType: string;
   onApplyCode: (code: string) => void;
+  context?: string;
+  onRequestSourceInput?: (prompt: string) => void;
 }) {
   const [messages, setMessages] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const remediate = useServerFn(copilotRemediate);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -182,39 +231,132 @@ export function CopilotChat({
   const submit = async (text: string) => {
     const instruction = text.trim();
     if (!instruction || loading) return;
+    if (!sourceCode.trim()) {
+      if (onRequestSourceInput) onRequestSourceInput(instruction);
+      else {
+        toast.error("Add source code before asking for a remediation patch.");
+      }
+      setInput("");
+      return;
+    }
+
     const userMsg: Msg = {
       id: crypto.randomUUID(),
       role: "user",
       text: instruction,
     };
-    setMessages((m) => [...m, userMsg]);
+    const assistantId = crypto.randomUUID();
+    setMessages((m) => [
+      ...m,
+      userMsg,
+      {
+        id: assistantId,
+        role: "assistant",
+        summary: "",
+        changes: [],
+        updatedCode: sourceCode,
+        diffOpen: false,
+        applied: true,
+        streaming: true,
+      },
+    ]);
     setInput("");
     setLoading(true);
     try {
-      const res = await remediate({
-        data: { instruction, source_code: sourceCode, file_type: fileType },
-      });
-      setMessages((m) => [
-        ...m,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          summary: res.summary,
-          changes: res.changes,
-          updatedCode: res.updated_code,
-          diffOpen: false,
-          applied: false,
+      const { data } = await supabase.auth.getSession();
+      const token = data.session?.access_token;
+      if (!token)
+        throw new Error("Your session has expired. Please sign in again.");
+
+      const response = await fetch("/api/copilot/stream", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
         },
-      ]);
+        body: JSON.stringify({
+          instruction,
+          source_code: sourceCode,
+          file_type: fileType,
+          context,
+        }),
+      });
+      if (!response.ok) {
+        const body = (await response.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        throw new Error(
+          body?.error || `Copilot request failed [${response.status}].`,
+        );
+      }
+      if (!response.body)
+        throw new Error("Copilot returned no response stream.");
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let result: CopilotResult | null = null;
+      let streamedContent = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        buffer += decoder.decode(value, { stream: !done });
+        const lines = buffer.split(/\r?\n/);
+        buffer = lines.pop() ?? "";
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          const event = JSON.parse(line) as CopilotStreamEvent;
+          if (event.type === "delta") {
+            streamedContent += event.delta;
+            const summary = readPartialSummary(streamedContent);
+            if (summary) {
+              setMessages((current) =>
+                current.map((message) =>
+                  message.id === assistantId && message.role === "assistant"
+                    ? { ...message, summary }
+                    : message,
+                ),
+              );
+            }
+          } else if (event.type === "done") {
+            result = event.result;
+          } else {
+            throw new Error(event.message);
+          }
+        }
+        if (done) break;
+      }
+      if (buffer.trim()) {
+        const event = JSON.parse(buffer) as CopilotStreamEvent;
+        if (event.type === "done") result = event.result;
+        else if (event.type === "error") throw new Error(event.message);
+      }
+      if (!result)
+        throw new Error("Copilot stream ended before the patch arrived.");
+      const finalResult = result;
+
+      setMessages((current) =>
+        current.map((message) =>
+          message.id === assistantId && message.role === "assistant"
+            ? {
+                ...message,
+                summary: finalResult.summary,
+                changes: finalResult.changes,
+                updatedCode: finalResult.updated_code,
+                applied: false,
+                streaming: false,
+              }
+            : message,
+        ),
+      );
     } catch (err) {
       const message = err instanceof Error ? err.message : "Copilot failed";
-      toast.error(message);
+      toast.error("Copilot response failed", { description: message });
       setMessages((m) => [
-        ...m,
+        ...m.filter((entry) => entry.id !== assistantId),
         {
-          id: crypto.randomUUID(),
+          id: assistantId,
           role: "assistant",
-          summary: `⚠ ${message}`,
+          summary: `Unable to generate a patch: ${message}`,
           changes: [],
           updatedCode: sourceCode,
           diffOpen: false,
@@ -258,7 +400,9 @@ export function CopilotChat({
               <Sparkles className="h-4 w-4 text-primary" />
             </div>
             <div className="text-[12px] font-medium">
-              Ask the Copilot anything about this file
+              {sourceCode.trim()
+                ? "Ask the Copilot anything about this file"
+                : "Ask a question or paste a code snippet"}
             </div>
             <div className="space-y-1.5 px-2">
               {SUGGESTIONS.map((s) => (
@@ -341,19 +485,15 @@ export function CopilotChat({
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          disabled={loading || !sourceCode.trim()}
+          disabled={loading}
           aria-label="Ask the AI remediation copilot"
-          placeholder={
-            sourceCode.trim()
-              ? "e.g. Fix the XSS on line 42 using DOMPurify…"
-              : "Paste, upload, or scan a repo first — then ask me anything about it"
-          }
+          placeholder="Ask a question or paste code to get started…"
           className="flex-1 bg-transparent font-mono text-[12px] outline-none placeholder:text-muted-foreground/60"
         />
         <Button
           type="submit"
           size="sm"
-          disabled={loading || !input.trim() || !sourceCode.trim()}
+          disabled={loading || !input.trim()}
           aria-label="Send message"
           className="h-7 w-7 shrink-0 bg-primary p-0 text-primary-foreground hover:opacity-90"
         >

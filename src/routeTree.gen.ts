@@ -16,6 +16,7 @@ import { Route as PoliciesRouteImport } from './routes/policies'
 import { Route as ResetPasswordRouteImport } from './routes/reset-password'
 import { Route as SitemapDotxmlRouteImport } from './routes/sitemap[.]xml'
 import { Route as ScansIdRouteImport } from './routes/scans.$id'
+import { Route as ApiCopilotStreamRouteImport } from './routes/api.copilot.stream'
 import { Route as ApiScanInstantRouteImport } from './routes/api.scan.instant'
 import { Route as ApiWebhooksGithubRouteImport } from './routes/api.webhooks.github'
 import { Route as ApiWebhooksPaddleRouteImport } from './routes/api.webhooks.paddle'
@@ -55,6 +56,11 @@ const ScansIdRoute = ScansIdRouteImport.update({
   path: '/scans/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiCopilotStreamRoute = ApiCopilotStreamRouteImport.update({
+  id: '/api/copilot/stream',
+  path: '/api/copilot/stream',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiScanInstantRoute = ApiScanInstantRouteImport.update({
   id: '/api/scan/instant',
   path: '/api/scan/instant',
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/scans/$id': typeof ScansIdRoute
+  '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/scans/$id': typeof ScansIdRoute
+  '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/reset-password': typeof ResetPasswordRoute
   '/sitemap.xml': typeof SitemapDotxmlRoute
   '/scans/$id': typeof ScansIdRoute
+  '/api/copilot/stream': typeof ApiCopilotStreamRoute
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sitemap.xml'
     | '/scans/$id'
+    | '/api/copilot/stream'
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sitemap.xml'
     | '/scans/$id'
+    | '/api/copilot/stream'
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/reset-password'
     | '/sitemap.xml'
     | '/scans/$id'
+    | '/api/copilot/stream'
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   ResetPasswordRoute: typeof ResetPasswordRoute
   SitemapDotxmlRoute: typeof SitemapDotxmlRoute
   ScansIdRoute: typeof ScansIdRoute
+  ApiCopilotStreamRoute: typeof ApiCopilotStreamRoute
   ApiScanInstantRoute: typeof ApiScanInstantRoute
   ApiWebhooksGithubRoute: typeof ApiWebhooksGithubRoute
   ApiWebhooksPaddleRoute: typeof ApiWebhooksPaddleRoute
@@ -211,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ScansIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/copilot/stream': {
+      id: '/api/copilot/stream'
+      path: '/api/copilot/stream'
+      fullPath: '/api/copilot/stream'
+      preLoaderRoute: typeof ApiCopilotStreamRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/scan/instant': {
       id: '/api/scan/instant'
       path: '/api/scan/instant'
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   ResetPasswordRoute: ResetPasswordRoute,
   SitemapDotxmlRoute: SitemapDotxmlRoute,
   ScansIdRoute: ScansIdRoute,
+  ApiCopilotStreamRoute: ApiCopilotStreamRoute,
   ApiScanInstantRoute: ApiScanInstantRoute,
   ApiWebhooksGithubRoute: ApiWebhooksGithubRoute,
   ApiWebhooksPaddleRoute: ApiWebhooksPaddleRoute,

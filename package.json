@@ -16,6 +16,7 @@
     "test:e2e": "npm run build && playwright test"
   },
   "dependencies": {
+    "@octokit/rest": "^22.0.1",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",

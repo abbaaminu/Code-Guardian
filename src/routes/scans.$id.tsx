@@ -14,12 +14,18 @@ import {
 import { RequireAuth } from "@/components/require-auth";
 import { useScanReportQuery } from "@/hooks/use-scan-queries";
 import { toast } from "sonner";
-import { ArrowLeft, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowLeft,
+  GitPullRequest,
+  Loader2,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { SEVERITIES } from "@/lib/severity";
 import { applyVulnerabilityPatch } from "@/lib/scan-patch";
 import {
   authorizeGithubRepository,
-  patchGithubFile,
+  createRemediationPullRequest,
 } from "@/lib/github/patch.functions";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
@@ -78,7 +84,7 @@ export const Route = createFileRoute("/scans/$id")({
 function ScanReport() {
   const { scanId } = Route.useLoaderData();
   const authorizeRepository = useServerFn(authorizeGithubRepository);
-  const commitGithubPatch = useServerFn(patchGithubFile);
+  const createGithubPullRequest = useServerFn(createRemediationPullRequest);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [appliedPatches, setAppliedPatches] = useState<
@@ -89,7 +95,11 @@ function ScanReport() {
   >({});
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const [liveCode, setLiveCode] = useState<string | null>(null);
-  const [committingId, setCommittingId] = useState<string | null>(null);
+  const [creatingPullRequest, setCreatingPullRequest] = useState(false);
+  const [submittedPatchIds, setSubmittedPatchIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [pullRequestUrl, setPullRequestUrl] = useState<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { data, isLoading, isError, refetch } = useScanReportQuery(scanId);
@@ -237,39 +247,6 @@ function ScanReport() {
       );
     const startLine = v.line_start + precedingPatches;
     const endLine = v.line_end + precedingPatches;
-    const isRepositoryScan = Boolean(
-      data.scan.repo_owner && data.scan.repo_name,
-    );
-    let githubToastId: ReturnType<typeof toast.loading> | undefined;
-    if (isRepositoryScan) {
-      if (!v.file_path) {
-        toast.error("Patch not committed", {
-          description: "This finding does not identify a repository file path.",
-        });
-        return;
-      }
-
-      githubToastId = toast.loading("Verifying GitHub App access...");
-      setCommittingId(v.id);
-      try {
-        await authorizeRepository({
-          data: {
-            scanId,
-            owner: data.scan.repo_owner!,
-            repo: data.scan.repo_name!,
-          },
-        });
-      } catch (error) {
-        toast.error("GitHub authorization required", {
-          id: githubToastId,
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
-        setCommittingId(null);
-        return;
-      }
-    }
-
     const result = applyVulnerabilityPatch(
       displayedCode,
       v.vulnerable_code_block,
@@ -277,80 +254,130 @@ function ScanReport() {
       startLine,
       endLine,
     );
-    if (!result.success && !isRepositoryScan) {
+    if (!result.success) {
       toast.error("Patch not applied", { description: result.reason });
       return;
     }
 
-    let replacementLineCount = result.success ? result.replacementLineCount : 0;
-    if (isRepositoryScan) {
-      const toastId =
-        githubToastId ?? toast.loading("Creating Pull Request...");
-      toast.loading("Creating Pull Request...", { id: toastId });
-      let pullRequestUrl: string | null = null;
-      try {
-        const repository = {
-          scanId,
-          owner: data.scan.repo_owner!,
-          repo: data.scan.repo_name!,
-        };
-        const committed = await commitGithubPatch({
-          data: {
-            ...repository,
-            filePath: v.file_path,
-            vulnerableCode: v.vulnerable_code_block,
-            fixedCode: v.fixed_code_block,
-            startLine,
-            endLine,
-          },
-        });
-        replacementLineCount = committed.replacementLineCount;
-        pullRequestUrl = committed.pullRequestUrl;
-      } catch (error) {
-        toast.error("Could not open GitHub Pull Request", {
-          id: toastId,
-          description:
-            error instanceof Error ? error.message : "Please try again.",
-        });
-        return;
-      } finally {
-        setCommittingId(null);
-      }
-      toast.success("Pull Request successfully opened!", {
-        id: toastId,
-        description:
-          pullRequestUrl ?? `${v.file_path} was committed to a fix branch.`,
-      });
-    }
-
-    if (result.success) setLiveCode(result.code);
+    setLiveCode(result.code);
     setAppliedPatches((prev) => ({
       ...prev,
       [v.id]: {
         startLine: v.line_start!,
         endLine: v.line_end!,
-        replacementLineCount,
+        replacementLineCount: result.replacementLineCount,
       },
     }));
     setApplied((prev) => ({ ...prev, [v.id]: true }));
     const flash = new Set<number>();
     for (
       let line = startLine;
-      line < startLine + replacementLineCount;
+      line < startLine + result.replacementLineCount;
       line++
     ) {
       flash.add(line);
     }
     setFlashLines(flash);
-    if (!data.scan.repo_owner || !data.scan.repo_name) {
-      toast.success("Patch applied to displayed source", {
+    toast.success(
+      data.scan.repo_owner && data.scan.repo_name
+        ? "Patch staged for GitHub"
+        : "Patch applied to displayed source",
+      {
         description: `Replaced the vulnerable snippet at lines ${startLine}-${endLine}.`,
-      });
-    }
+      },
+    );
     setTimeout(() => setFlashLines(new Set()), 1500);
   };
 
   const appliedCount = Object.values(applied).filter(Boolean).length;
+  const pendingPatchIds = Object.keys(appliedPatches).filter(
+    (id) => !submittedPatchIds.has(id),
+  );
+  const isRepositoryScan = Boolean(data.scan.repo_owner && data.scan.repo_name);
+
+  const handleCreateRemediationPullRequest = async () => {
+    if (
+      !data.scan.repo_owner ||
+      !data.scan.repo_name ||
+      pendingPatchIds.length === 0 ||
+      creatingPullRequest
+    ) {
+      return;
+    }
+
+    setCreatingPullRequest(true);
+    const toastId = toast.loading("Preparing GitHub remediation PR…");
+    try {
+      await authorizeRepository({
+        data: {
+          scanId,
+          owner: data.scan.repo_owner,
+          repo: data.scan.repo_name,
+        },
+      });
+      const result = await createGithubPullRequest({
+        data: {
+          scanId,
+          owner: data.scan.repo_owner,
+          repo: data.scan.repo_name,
+          vulnerabilityIds: pendingPatchIds,
+        },
+      });
+      setSubmittedPatchIds((previous) => {
+        const updated = new Set(previous);
+        for (const id of result.vulnerabilityIds) updated.add(id);
+        return updated;
+      });
+      setPullRequestUrl(result.pullRequestUrl);
+      toast.success("Remediation pull request created", {
+        id: toastId,
+        description: `${result.files.length} file${result.files.length === 1 ? "" : "s"} committed on ${result.branchName}.`,
+        ...(result.pullRequestUrl
+          ? {
+              action: {
+                label: "View PR",
+                onClick: () =>
+                  window.open(
+                    result.pullRequestUrl,
+                    "_blank",
+                    "noopener,noreferrer",
+                  ),
+              },
+            }
+          : {}),
+      });
+    } catch (error) {
+      toast.error("Could not create remediation pull request", {
+        id: toastId,
+        description:
+          error instanceof Error ? error.message : "Please try again.",
+      });
+    } finally {
+      setCreatingPullRequest(false);
+    }
+  };
+  const selectedVulnerability = vulns.find((v) => v.id === activeId);
+  const copilotContext = selectedVulnerability
+    ? [
+        `Selected finding: ${selectedVulnerability.title}`,
+        `Severity: ${selectedVulnerability.severity}`,
+        selectedVulnerability.cwe_id
+          ? `CWE: ${selectedVulnerability.cwe_id}`
+          : "",
+        selectedVulnerability.file_path
+          ? `File: ${selectedVulnerability.file_path}`
+          : "",
+        selectedVulnerability.line_start && selectedVulnerability.line_end
+          ? `Lines: ${selectedVulnerability.line_start}-${selectedVulnerability.line_end}`
+          : "",
+        `Remediation guidance: ${selectedVulnerability.remediation_steps}`,
+        `Vulnerable code:\n${selectedVulnerability.vulnerable_code_block}`,
+        `Suggested fix:\n${selectedVulnerability.fixed_code_block}`,
+      ]
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 12000)
+    : undefined;
 
   return (
     <RequireAuth>
@@ -383,10 +410,13 @@ function ScanReport() {
             <CopilotChat
               sourceCode={displayedCode}
               fileType={scan.file_type}
+              context={copilotContext}
               onApplyCode={(code) => {
                 setLiveCode(code);
                 setApplied({});
                 setAppliedPatches({});
+                setSubmittedPatchIds(new Set());
+                setPullRequestUrl(null);
                 setFlashLines(new Set());
               }}
             />
@@ -432,13 +462,44 @@ function ScanReport() {
               )}
             </Card>
 
-            <div className="flex items-center justify-between px-1">
-              <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
-                Findings ({vulns.length})
-              </h2>
-              <span className="text-[10px] text-muted-foreground">
-                click a line to inspect
-              </span>
+            <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+              <div>
+                <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground">
+                  Findings ({vulns.length})
+                </h2>
+                <span className="text-[10px] text-muted-foreground">
+                  click a line to inspect
+                </span>
+              </div>
+              {isRepositoryScan && (
+                <div className="flex items-center gap-2">
+                  {pullRequestUrl && pendingPatchIds.length === 0 && (
+                    <Button asChild variant="outline" size="sm" className="h-8">
+                      <a href={pullRequestUrl} target="_blank" rel="noreferrer">
+                        <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+                        View PR
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    className="h-8 gap-1.5"
+                    disabled={
+                      pendingPatchIds.length === 0 || creatingPullRequest
+                    }
+                    onClick={() => void handleCreateRemediationPullRequest()}
+                  >
+                    {creatingPullRequest ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    ) : (
+                      <GitPullRequest className="h-3.5 w-3.5" />
+                    )}
+                    {creatingPullRequest
+                      ? "Creating PR…"
+                      : `Create Remediation PR (${pendingPatchIds.length})`}
+                  </Button>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 space-y-3 overflow-auto pb-6 pr-1">
@@ -460,8 +521,6 @@ function ScanReport() {
                     vuln={v}
                     expanded={activeId === v.id}
                     applied={!!applied[v.id]}
-                    applying={committingId === v.id}
-                    busy={committingId !== null}
                     onToggle={() => handleToggle(v.id)}
                     onApply={() => handleApply(v)}
                   />

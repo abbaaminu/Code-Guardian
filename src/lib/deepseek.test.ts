@@ -3,11 +3,59 @@ import {
   DeepSeekApiError,
   isDeepSeekUnavailable,
   requestDeepSeekChat,
+  streamDeepSeekChat,
 } from "./deepseek";
 
 describe("requestDeepSeekChat", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+  });
+
+  describe("streamDeepSeekChat", () => {
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it("parses content deltas across chunk boundaries", async () => {
+      const encoder = new TextEncoder();
+      const payload =
+        'data: {"choices":[{"delta":{"content":"{\\"summary\\":"}}]}\n\n' +
+        'data: {"choices":[{"delta":{"content":"\\"Fixed.\\"}"}}]}\n\n' +
+        "data: [DONE]\n\n";
+      const bytes = encoder.encode(payload);
+      const responseBody = new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(bytes.slice(0, 17));
+          controller.enqueue(bytes.slice(17, 49));
+          controller.enqueue(bytes.slice(49));
+          controller.close();
+        },
+      });
+      const fetchMock = vi.fn().mockResolvedValue(
+        new Response(responseBody, {
+          status: 200,
+          headers: { "content-type": "text/event-stream" },
+        }),
+      );
+      vi.stubGlobal("fetch", fetchMock);
+
+      const deltas: string[] = [];
+      for await (const delta of streamDeepSeekChat(
+        "deepseek-secret",
+        "deepseek-chat",
+        [{ role: "user", content: "Fix this code" }],
+        0.2,
+      )) {
+        deltas.push(delta);
+      }
+
+      expect(deltas).toEqual(['{"summary":', '"Fixed."}']);
+      expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+        model: "deepseek-chat",
+        stream: true,
+        response_format: { type: "json_object" },
+      });
+    });
   });
 
   it("uses the OpenAI-compatible chat endpoint and parses the first choice", async () => {
