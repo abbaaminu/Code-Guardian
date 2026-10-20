@@ -15,6 +15,20 @@ export class DeepSeekApiError extends Error {
   }
 }
 
+/**
+ * The model id used when `DEEPSEEK_MODEL` is not configured.
+ *
+ * DeepSeek only publishes `deepseek-chat` and `deepseek-reasoner`. The previous
+ * `deepseek-flash` default does not exist, so every scan and agent turn failed
+ * with an upstream 400 before producing any output.
+ */
+export const DEFAULT_DEEPSEEK_MODEL = "deepseek-chat";
+
+/** Resolves the configured model once, ignoring blank/whitespace values. */
+export function resolveDeepSeekModel(): string {
+  return process.env.DEEPSEEK_MODEL?.trim() || DEFAULT_DEEPSEEK_MODEL;
+}
+
 export function isDeepSeekUnavailable(
   error: unknown,
 ): error is DeepSeekApiError {
@@ -29,12 +43,14 @@ export async function requestDeepSeekChat(
   model: string,
   messages: DeepSeekMessage[],
   temperature: number,
+  signal?: AbortSignal,
 ): Promise<string> {
   const response = await withScanEngineError(
     `DeepSeek chat completions (${model})`,
     () =>
       fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
+        signal,
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",
@@ -77,12 +93,14 @@ export async function* streamDeepSeekChat(
   model: string,
   messages: DeepSeekMessage[],
   temperature: number,
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const response = await withScanEngineError(
     `DeepSeek streaming chat completions (${model})`,
     () =>
       fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
+        signal,
         headers: {
           Authorization: `Bearer ${apiKey}`,
           "Content-Type": "application/json",

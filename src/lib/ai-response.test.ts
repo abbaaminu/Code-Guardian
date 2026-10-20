@@ -57,4 +57,40 @@ describe("parseCopilotResponse", () => {
       "expected updated_code, summary, and changes",
     );
   });
+
+  it("accepts a question-style reply that proposes no code change", () => {
+    const result = parseCopilotResponse(
+      JSON.stringify({
+        summary: "The query is injectable through string concatenation.",
+        changes: ["Use a parameterized query."],
+        updated_code: "",
+        answer:
+          "The query interpolates user input directly. Bind it as a parameter.",
+      }),
+    );
+
+    expect(result.updated_code).toBe("");
+    expect(result.answer).toContain("Bind it as a parameter");
+  });
+
+  it("recovers a payload wrapped in a markdown fence", () => {
+    const fenced =
+      '```json\n{"summary":"Fixed.","changes":[],"updated_code":"const safe = true;"}\n```';
+
+    expect(parseCopilotResponse(fenced).updated_code).toBe(
+      "const safe = true;",
+    );
+  });
+
+  it("strips a markdown fence from the returned source", () => {
+    const result = parseCopilotResponse(
+      JSON.stringify({
+        summary: "Fixed.",
+        changes: [],
+        updated_code: "```ts\nconst safe = true;\n```",
+      }),
+    );
+
+    expect(result.updated_code).toBe("const safe = true;");
+  });
 });

@@ -3,30 +3,34 @@ import type {} from "@tanstack/react-start";
 import { z } from "zod";
 import { aiApiRateLimiter } from "@/lib/rate-limiter";
 import { parseCopilotResponse } from "@/lib/ai-response";
-import { streamDeepSeekChat } from "@/lib/deepseek";
+import { buildCopilotMessages } from "@/lib/copilot-prompt";
+import { streamDeepSeekChat, resolveDeepSeekModel } from "@/lib/deepseek";
 import { verifySupabaseToken } from "@/integrations/supabase/auth-middleware";
 import { NETWORK_CONNECTION_ERROR } from "@/lib/scan-engine-errors";
 
 const CopilotInput = z.object({
-  instruction: z.string().min(1).max(2000),
-  source_code: z.string().min(1).max(60000),
-  file_type: z.string().min(1).max(40),
+  instruction: z.string().trim().min(1).max(2000),
+  // A scan is no longer required to talk to the copilot: it answers questions
+  // about a file, a pasted snippet, or (with no code at all) about the finding
+  // context passed alongside the instruction.
+  source_code: z.string().max(60000).default(""),
+  file_type: z.string().trim().min(1).max(40).default("text"),
   context: z.string().max(12000).optional(),
 });
 
-function jsonError(message: string, status: number): Response {
+function jsonError(
+  message: string,
+  status: number,
+  headers: Record<string, string> = {},
+): Response {
   return new Response(JSON.stringify({ error: message }), {
     status,
-    headers: { "content-type": "application/json" },
+    headers: {
+      "content-type": "application/json; charset=utf-8",
+      "cache-control": "no-store",
+      ...headers,
+    },
   });
-}
-
-function streamEvent(
-  controller: ReadableStreamDefaultController<Uint8Array>,
-  encoder: TextEncoder,
-  event: unknown,
-) {
-  controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
 }
 
 export const Route = createFileRoute("/api/copilot/stream")({
@@ -66,13 +70,8 @@ export const Route = createFileRoute("/api/copilot/stream")({
           return jsonError("Unauthorized: invalid token", 401);
         }
 
-        if (!aiApiRateLimiter.tryTake(userId)) {
-          return jsonError(
-            "Rate limit reached — please wait a moment before asking the copilot again.",
-            429,
-          );
-        }
-
+        // Validate before spending a rate-limit token: a malformed request
+        // should never consume the user's DeepSeek budget.
         let body: unknown;
         try {
           body = await request.json();
@@ -84,6 +83,14 @@ export const Route = createFileRoute("/api/copilot/stream")({
           return jsonError("Invalid copilot request", 400);
         }
 
+        if (!aiApiRateLimiter.tryTake(userId)) {
+          return jsonError(
+            "Rate limit reached — please wait a moment before asking the copilot again.",
+            429,
+            { "retry-after": "10" },
+          );
+        }
+
         const apiKey = process.env.DEEPSEEK_API_KEY;
         if (!apiKey) {
           return jsonError(
@@ -93,64 +100,90 @@ export const Route = createFileRoute("/api/copilot/stream")({
         }
 
         const { instruction, source_code, file_type, context } = parsed.data;
-        const systemPrompt = `You are SecurePulse Remediation Copilot. Rewrite the user's code per their instruction, prioritizing security best practices.
-
-STRICT OUTPUT CONTRACT:
-- Return ONLY a JSON object: {"summary": string, "changes": string[], "updated_code": string}
-- "summary": one-sentence description of what changed.
-- "changes": short bullet list (max 5) of concrete edits.
-- "updated_code": the ENTIRE updated source file, compilable/valid ${file_type}. NO markdown fences, NO placeholders, NO "TODO" comments.
-- Use the supplied finding context to make the patch specific to that issue when present.
-- If the instruction is unsafe, unclear, or unrelated, return the original code unchanged with an explanatory summary.`;
-        const userPrompt = `Language: ${file_type}
-Instruction: ${instruction}
-${context ? `Finding context:\n${context}\n` : ""}
---- CODE START ---
-${source_code}
---- CODE END ---`;
-        const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
+        const messages = buildCopilotMessages({
+          instruction,
+          fileType: file_type,
+          sourceCode: source_code,
+          context,
+        });
+        const model = resolveDeepSeekModel();
         const encoder = new TextEncoder();
+
+        // Abort the upstream DeepSeek request when the browser goes away
+        // (tab closed, "Stop" pressed) so we stop paying for orphaned tokens.
+        const upstream = new AbortController();
+        const abortUpstream = () => upstream.abort();
+        request.signal.addEventListener("abort", abortUpstream);
 
         return new Response(
           new ReadableStream<Uint8Array>({
             async start(controller) {
-              let content = "";
+              let closed = false;
+              const send = (event: unknown) => {
+                if (closed) return;
+                try {
+                  controller.enqueue(
+                    encoder.encode(`${JSON.stringify(event)}\n`),
+                  );
+                } catch {
+                  // The client disconnected mid-stream; nothing left to write.
+                  closed = true;
+                  upstream.abort();
+                }
+              };
+
               try {
+                let content = "";
                 for await (const delta of streamDeepSeekChat(
                   apiKey,
                   model,
-                  [
-                    { role: "system", content: systemPrompt },
-                    { role: "user", content: userPrompt },
-                  ],
+                  messages,
                   0.2,
+                  upstream.signal,
                 )) {
+                  if (upstream.signal.aborted) break;
                   content += delta;
-                  streamEvent(controller, encoder, { type: "delta", delta });
+                  send({ type: "delta", delta });
                 }
-                streamEvent(controller, encoder, {
-                  type: "done",
-                  result: parseCopilotResponse(content),
-                });
+
+                if (!upstream.signal.aborted) {
+                  send({
+                    type: "done",
+                    result: parseCopilotResponse(content),
+                  });
+                }
               } catch (error) {
-                console.error("[Copilot stream] Remediation failed:", error);
-                streamEvent(controller, encoder, {
-                  type: "error",
-                  message:
-                    error instanceof Error
-                      ? error.message
-                      : "Copilot failed. Please try again.",
-                });
+                if (!upstream.signal.aborted) {
+                  console.error("[Copilot stream] Remediation failed:", error);
+                  send({
+                    type: "error",
+                    message:
+                      error instanceof Error
+                        ? error.message
+                        : "Copilot failed. Please try again.",
+                  });
+                }
               } finally {
-                controller.close();
+                request.signal.removeEventListener("abort", abortUpstream);
+                if (!closed) {
+                  try {
+                    controller.close();
+                  } catch {
+                    closed = true;
+                  }
+                }
               }
+            },
+            cancel() {
+              upstream.abort();
             },
           }),
           {
             headers: {
               "content-type": "application/x-ndjson; charset=utf-8",
-              "cache-control": "no-cache, no-transform",
+              "cache-control": "no-cache, no-store, no-transform",
               "x-accel-buffering": "no",
+              "x-content-type-options": "nosniff",
             },
           },
         );

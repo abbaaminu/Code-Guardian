@@ -98,19 +98,16 @@ export function ScanForm({
   submitting,
   onSubmit,
   onCodeChange,
-  sourcePrompt,
 }: {
   submitting: boolean;
   onSubmit: (v: ScanFormValues) => void;
   onCodeChange?: (code: string, fileType: string) => void;
-  sourcePrompt?: { value: string; requestId: number } | null;
 }) {
   const [projectName, setProjectName] = useState("");
   const [fileType, setFileType] = useState("Python");
   const [code, setCode] = useState("");
   const [tab, setTab] = useState("paste");
   const [error, setError] = useState<string | null>(null);
-  const sourceInputRef = useRef<HTMLTextAreaElement>(null);
 
   // L4: keep the latest onCodeChange in a ref so the sync effect below never
   // captures a stale prop from an earlier render (the parent passes an inline
@@ -123,14 +120,6 @@ export function ScanForm({
   useEffect(() => {
     onCodeChangeRef.current?.(code, fileType);
   }, [code, fileType]);
-
-  useEffect(() => {
-    if (!sourcePrompt) return;
-    setCode(sourcePrompt.value);
-    setError(null);
-    setTab("paste");
-    requestAnimationFrame(() => sourceInputRef.current?.focus());
-  }, [sourcePrompt]);
 
   const handleFile = useCallback(
     async (file: File) => {
@@ -238,7 +227,6 @@ export function ScanForm({
         </TabsList>
         <TabsContent value="paste" className="mt-3">
           <Textarea
-            ref={sourceInputRef}
             value={code}
             onChange={(e) => {
               setCode(e.target.value);

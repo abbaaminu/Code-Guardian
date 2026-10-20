@@ -104,22 +104,6 @@ function Dashboard() {
   );
   const [copilotCode, setCopilotCode] = useState("");
   const [copilotFileType, setCopilotFileType] = useState("Python");
-  const [sourcePrompt, setSourcePrompt] = useState<{
-    value: string;
-    requestId: number;
-  } | null>(null);
-
-  const focusScanInputWithPrompt = (prompt: string) => {
-    setSourcePrompt((current) => ({
-      value: prompt,
-      requestId: (current?.requestId ?? 0) + 1,
-    }));
-    setCopilotCode(prompt);
-    toast.info("Prompt moved to the scan input", {
-      description:
-        "Add or replace source code there, then run a scan to give Copilot code context.",
-    });
-  };
 
   const startCheckout = async (tier: "starter" | "pro") => {
     setCheckoutTier(tier);
@@ -302,7 +286,6 @@ function Dashboard() {
                   setCopilotCode(code);
                   setCopilotFileType(fileType);
                 }}
-                sourcePrompt={sourcePrompt}
               />
             )}
 
@@ -311,7 +294,6 @@ function Dashboard() {
                 sourceCode={copilotCode}
                 fileType={copilotFileType}
                 onApplyCode={(code) => setCopilotCode(code)}
-                onRequestSourceInput={focusScanInputWithPrompt}
               />
             </section>
           </div>

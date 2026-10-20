@@ -1,8 +1,10 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  DEFAULT_DEEPSEEK_MODEL,
   DeepSeekApiError,
   isDeepSeekUnavailable,
   requestDeepSeekChat,
+  resolveDeepSeekModel,
   streamDeepSeekChat,
 } from "./deepseek";
 
@@ -131,5 +133,26 @@ describe("requestDeepSeekChat", () => {
       isDeepSeekUnavailable(new DeepSeekApiError(500, "server error")),
     ).toBe(false);
     expect(isDeepSeekUnavailable(new Error("network error"))).toBe(false);
+  });
+});
+
+describe("resolveDeepSeekModel", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("defaults to a model id DeepSeek actually publishes", () => {
+    vi.stubEnv("DEEPSEEK_MODEL", "");
+
+    expect(resolveDeepSeekModel()).toBe("deepseek-chat");
+    expect(DEFAULT_DEEPSEEK_MODEL).toBe("deepseek-chat");
+  });
+
+  it("honours a configured model and ignores blank overrides", () => {
+    vi.stubEnv("DEEPSEEK_MODEL", "deepseek-reasoner");
+    expect(resolveDeepSeekModel()).toBe("deepseek-reasoner");
+
+    vi.stubEnv("DEEPSEEK_MODEL", "   ");
+    expect(resolveDeepSeekModel()).toBe(DEFAULT_DEEPSEEK_MODEL);
   });
 });

@@ -9,11 +9,12 @@ import { buildSarifLog } from "@/lib/sarif";
 import { aiApiRateLimiter } from "@/lib/rate-limiter";
 import { withScanEngineError } from "@/lib/scan-engine-errors";
 import { withEngineTiming } from "@/lib/telemetry/sentry";
-import { isDeepSeekUnavailable, requestDeepSeekChat } from "@/lib/deepseek";
 import {
-  parseCopilotResponse,
-  parseAuditVulnerabilities,
-} from "@/lib/ai-response";
+  isDeepSeekUnavailable,
+  requestDeepSeekChat,
+  resolveDeepSeekModel,
+} from "@/lib/deepseek";
+import { parseAuditVulnerabilities } from "@/lib/ai-response";
 
 type Severity = "critical" | "high" | "medium" | "low";
 
@@ -153,7 +154,7 @@ async function callDeepSeek(
       "Security audit AI engine is temporarily unconfigured. Set DEEPSEEK_API_KEY in the server environment.",
     );
 
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
+  const model = resolveDeepSeekModel();
   const systemPrompt = `You are SecurePulse, an enterprise, non-training-tier code security auditor.
 Analyze code for security vulnerabilities, secret exposure, and compliance violations aligned with: ${policies.join(", ") || "OWASP Top 10, CWE Top 25"}.
 
@@ -429,61 +430,10 @@ export const listPolicies = createServerFn({ method: "GET" })
     return data ?? [];
   });
 
-const CopilotInput = z.object({
-  instruction: z.string().min(1).max(2000),
-  source_code: z.string().min(1).max(60000),
-  file_type: z.string().min(1).max(40),
-});
-
-// SECURITY FIX: this endpoint proxies to the DeepSeek API using the server's own
-// API key. It requires a signed-in Supabase user (below), and every call is
-// additionally per-user rate limited (H4) so one account can't burn the shared
-// DeepSeek quota/budget.
-export const copilotRemediate = createServerFn({ method: "POST" })
-  .middleware([attachSupabaseAuth, requireSupabaseAuth])
-  .validator((input: unknown) => CopilotInput.parse(input))
-  .handler(async ({ data, context }) => {
-    if (!aiApiRateLimiter.tryTake(context.userId)) {
-      throw new Error(
-        "Rate limit reached — please wait a moment before asking the copilot again.",
-      );
-    }
-
-    const apiKey = process.env.DEEPSEEK_API_KEY;
-    if (!apiKey) {
-      throw new Error(
-        "Copilot AI is temporarily unconfigured. Set DEEPSEEK_API_KEY in the server environment.",
-      );
-    }
-
-    const systemPrompt = `You are SecurePulse Remediation Copilot. Rewrite the user's code per their instruction, prioritizing security best practices.
-
-STRICT OUTPUT CONTRACT:
-- Return ONLY a JSON object: {"updated_code": string, "summary": string, "changes": string[]}
-- "updated_code": the ENTIRE updated source file, compilable/valid ${data.file_type}. NO markdown fences, NO placeholders, NO "TODO" comments.
-- "summary": one-sentence description of what changed.
-- "changes": short bullet list (max 5) of concrete edits.
-- If the instruction is unsafe, unclear, or unrelated, still return the original code unchanged with an explanatory summary.`;
-
-    const userPrompt = `Language: ${data.file_type}
-Instruction: ${data.instruction}
-
---- CODE START ---
-${data.source_code}
---- CODE END ---`;
-
-    const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
-    const content = await requestDeepSeekChat(
-      apiKey,
-      model,
-      [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      0.2,
-    );
-    return parseCopilotResponse(content);
-  });
+// NOTE: the legacy non-streaming `copilotRemediate` server function was removed.
+// The copilot now talks to `/api/copilot/stream` only (one prompt/parse path via
+// `buildCopilotMessages` + `parseCopilotResponse`), so there is no second,
+// drifting implementation of the remediation contract.
 
 // SECURITY FIX (H5): togglePolicy requires BOTH a signed-in user (middleware)
 // AND the `admin` role in the user_roles table (see

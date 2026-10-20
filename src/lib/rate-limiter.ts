@@ -1,12 +1,12 @@
 // Per-user token-bucket rate limiter for expensive external calls (DeepSeek).
 //
-// WHY: `runScan`, `copilotRemediate`, and the autonomous agent all proxy to the
-// DeepSeek API using the server's own key. Requiring a signed-in user stops
-// anonymous abuse but not one account hammering the API and burning quota. A
-// token bucket keyed by user id is a cheap, dependency-free ceiling until the
-// queue/Redis infra from SECURITY_AUDIT.md §6 exists — swap this for a Redis
-// counter (or BullMQ rate limiter) when that lands; the call sites just call
-// `tryTake(userId)`, so swapping is localized.
+// WHY: `runScan`, the `/api/copilot/stream` route, and the autonomous agent all
+// proxy to the DeepSeek API using the server's own key. Requiring a signed-in
+// user stops anonymous abuse but not one account hammering the API and burning
+// quota. A token bucket keyed by user id is a cheap, dependency-free ceiling
+// until the queue/Redis infra from SECURITY_AUDIT.md §6 exists — swap this for a
+// Redis counter (or BullMQ rate limiter) when that lands; the call sites just
+// call `tryTake(userId)`, so swapping is localized.
 
 export interface RateLimitOptions {
   /** Maximum number of calls allowed in a burst. */

@@ -3,7 +3,7 @@ import { z } from "zod";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 import { attachSupabaseAuth } from "@/integrations/supabase/auth-attacher";
 import { aiApiRateLimiter } from "@/lib/rate-limiter";
-import { requestDeepSeekChat } from "@/lib/deepseek";
+import { requestDeepSeekChat, resolveDeepSeekModel } from "@/lib/deepseek";
 import {
   validateAgentEdits,
   type SafeAgentEdit,
@@ -191,7 +191,7 @@ async function generateRemediationPlan(
   contextFiles: Array<{ file_path: string; content: string }>,
   apiKey: string,
 ): Promise<AgentPlan> {
-  const model = process.env.DEEPSEEK_MODEL || "deepseek-flash";
+  const model = resolveDeepSeekModel();
 
   const contextPrompt = contextFiles
     .map((f) => `--- FILE: ${f.file_path} ---\n${f.content}\n--- END FILE ---`)
@@ -304,8 +304,8 @@ export async function triggerValidationWorkflow(
  *    deployment-wide GITHUB_TOKEN is never used for caller-selected repositories.
  *  - Every AI-proposed edit passes `validateAgentEdits` before any blob/tree/ref
  *    is created (H1).
- *  - DeepSeek calls are per-user rate limited alongside runScan/copilotRemediate
- *    (H4).
+ *  - DeepSeek calls are per-user rate limited alongside runScan and the copilot
+ *    stream route (H4).
  */
 export const runAgentTask = createServerFn({ method: "POST" })
   .middleware([attachSupabaseAuth, requireSupabaseAuth])
