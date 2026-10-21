@@ -93,4 +93,85 @@ describe("parseCopilotResponse", () => {
 
     expect(result.updated_code).toBe("const safe = true;");
   });
+
+  it("omits patches entirely for a plain chat reply", () => {
+    const result = parseCopilotResponse(
+      JSON.stringify({
+        summary: "Answered.",
+        changes: [],
+        updated_code: "",
+        answer: "Bind the parameter.",
+      }),
+    );
+
+    expect(result.patches).toBeUndefined();
+  });
+
+  it("normalizes a batch turn's per-finding patches", () => {
+    const result = parseCopilotResponse(
+      JSON.stringify({
+        summary: "Patched 2 findings.",
+        changes: ["Parameterized query.", "Moved secret to env."],
+        updated_code: "",
+        patches: [
+          {
+            vulnerability_id: " vuln-1 ",
+            file_path: "api/users.ts",
+            vulnerable_code: "db.query(sql)",
+            fixed_code: "```ts\ndb.query(sql, params)\n```",
+          },
+          {
+            vulnerability_id: "vuln-2",
+            fixed_code: "const token = process.env.TOKEN;",
+          },
+        ],
+      }),
+    );
+
+    expect(result.patches).toEqual([
+      {
+        vulnerability_id: "vuln-1",
+        file_path: "api/users.ts",
+        vulnerable_code: "db.query(sql)",
+        fixed_code: "db.query(sql, params)",
+      },
+      {
+        vulnerability_id: "vuln-2",
+        file_path: null,
+        vulnerable_code: "",
+        fixed_code: "const token = process.env.TOKEN;",
+      },
+    ]);
+  });
+
+  it("keeps the first patch per finding and drops unusable ones", () => {
+    const result = parseCopilotResponse(
+      JSON.stringify({
+        summary: "Patched.",
+        changes: [],
+        updated_code: "",
+        patches: [
+          { vulnerability_id: "vuln-1", fixed_code: "const safe = 1;" },
+          { vulnerability_id: "vuln-1", fixed_code: "const duplicate = 2;" },
+          { vulnerability_id: "vuln-2", fixed_code: "```\n\n```" },
+        ],
+      }),
+    );
+
+    expect(result.patches).toHaveLength(1);
+    expect(result.patches?.[0].fixed_code).toBe("const safe = 1;");
+  });
+
+  it("rejects a batch patch without an anchor id", () => {
+    expect(() =>
+      parseCopilotResponse(
+        JSON.stringify({
+          summary: "Patched.",
+          changes: [],
+          updated_code: "",
+          patches: [{ vulnerability_id: "  ", fixed_code: "const safe = 1;" }],
+        }),
+      ),
+    ).toThrow("expected updated_code, summary, and changes");
+  });
 });

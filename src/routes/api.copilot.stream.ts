@@ -3,10 +3,30 @@ import type {} from "@tanstack/react-start";
 import { z } from "zod";
 import { aiApiRateLimiter } from "@/lib/rate-limiter";
 import { parseCopilotResponse } from "@/lib/ai-response";
-import { buildCopilotMessages } from "@/lib/copilot-prompt";
+import {
+  buildCopilotMessages,
+  COPILOT_MAX_FINDINGS,
+} from "@/lib/copilot-prompt";
 import { streamDeepSeekChat, resolveDeepSeekModel } from "@/lib/deepseek";
 import { verifySupabaseToken } from "@/integrations/supabase/auth-middleware";
 import { NETWORK_CONNECTION_ERROR } from "@/lib/scan-engine-errors";
+
+/**
+ * One unpatched finding sent by the scan workspace for a batched
+ * "Fix All Findings" turn. Mirrors `CopilotFixAllFinding` on the client.
+ */
+const CopilotFinding = z.object({
+  id: z.string().trim().min(1).max(100),
+  title: z.string().trim().min(1).max(500),
+  severity: z.string().trim().max(40).optional(),
+  cwe: z.string().trim().max(40).nullish(),
+  file_path: z.string().max(1_000).nullish(),
+  line_start: z.number().int().positive().nullish(),
+  line_end: z.number().int().positive().nullish(),
+  vulnerable_code: z.string().max(8_000).default(""),
+  fixed_code: z.string().max(8_000).default(""),
+  remediation: z.string().max(2_000).default(""),
+});
 
 const CopilotInput = z.object({
   instruction: z.string().trim().min(1).max(2000),
@@ -16,6 +36,11 @@ const CopilotInput = z.object({
   source_code: z.string().max(60000).default(""),
   file_type: z.string().trim().min(1).max(40).default("text"),
   context: z.string().max(12000).optional(),
+  // "fix_all" is the explicit UI action; a typed instruction like "fix all
+  // problems" is detected server-side in `buildCopilotMessages`.
+  mode: z.enum(["chat", "fix_all"]).default("chat"),
+  /** Entire unpatched finding set for the current scan (batch turns only). */
+  findings: z.array(CopilotFinding).max(COPILOT_MAX_FINDINGS).default([]),
 });
 
 function jsonError(
@@ -99,12 +124,26 @@ export const Route = createFileRoute("/api/copilot/stream")({
           );
         }
 
-        const { instruction, source_code, file_type, context } = parsed.data;
+        const { instruction, source_code, file_type, context, mode, findings } =
+          parsed.data;
         const messages = buildCopilotMessages({
           instruction,
           fileType: file_type,
           sourceCode: source_code,
           context,
+          fixAll: mode === "fix_all",
+          findings: findings.map((finding) => ({
+            id: finding.id,
+            title: finding.title,
+            severity: finding.severity,
+            cwe: finding.cwe,
+            filePath: finding.file_path,
+            startLine: finding.line_start,
+            endLine: finding.line_end,
+            vulnerableCode: finding.vulnerable_code,
+            suggestedFix: finding.fixed_code,
+            remediation: finding.remediation,
+          })),
         });
         const model = resolveDeepSeekModel();
         const encoder = new TextEncoder();

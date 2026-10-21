@@ -9,7 +9,10 @@ import { WorkspaceActionBar } from "@/components/workspace-action-bar";
 import { CopilotChat } from "@/components/copilot-chat";
 import type {
   CopilotApplyResult,
+  CopilotBatchApplyResult,
+  CopilotBatchPatch,
   CopilotFindingTarget,
+  CopilotFixAllFinding,
 } from "@/components/copilot-chat";
 import {
   RouteErrorFallback,
@@ -40,6 +43,23 @@ export interface ScanReportLoaderData {
   scanId: string;
 }
 
+/** One patch applied to the live workspace, anchored to original line numbers. */
+type AppliedPatchRecord = {
+  startLine: number;
+  endLine: number;
+  replacementLineCount: number;
+};
+
+/**
+ * In-memory workspace used to thread a batch of patches through one commit.
+ * Every patch shifts later line numbers, so sequential applies must share the
+ * same code + ledger instead of re-reading React state (which lags a render).
+ */
+interface EditorDraft {
+  code: string;
+  patches: Record<string, AppliedPatchRecord>;
+}
+
 /** Result of writing a finding's suggested fix into the live workspace code. */
 type PatchApplication =
   | {
@@ -47,6 +67,8 @@ type PatchApplication =
       startLine: number;
       endLine: number;
       replacementLineCount: number;
+      /** Workspace state after this patch, for the next patch in a batch. */
+      draft: EditorDraft;
     }
   | { ok: false; reason: string };
 
@@ -104,10 +126,7 @@ function ScanReport() {
   const [activeId, setActiveId] = useState<string | null>(null);
   const [applied, setApplied] = useState<Record<string, boolean>>({});
   const [appliedPatches, setAppliedPatches] = useState<
-    Record<
-      string,
-      { startLine: number; endLine: number; replacementLineCount: number }
-    >
+    Record<string, AppliedPatchRecord>
   >({});
   const [flashLines, setFlashLines] = useState<Set<number>>(new Set());
   const [liveCode, setLiveCode] = useState<string | null>(null);
@@ -121,6 +140,8 @@ function ScanReport() {
   const [copilotFinding, setCopilotFinding] =
     useState<CopilotFindingTarget | null>(null);
   const [copilotFocusSignal, setCopilotFocusSignal] = useState(0);
+  // Header "Fix All Findings with AI" trigger for the panel.
+  const [copilotFixAllSignal, setCopilotFixAllSignal] = useState(0);
   const copilotSectionRef = useRef<HTMLElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
@@ -187,6 +208,29 @@ function ScanReport() {
     return lines;
   }, [appliedPatches]);
 
+  /**
+   * Every unpatched finding in the scan, in report order. Copilot's "Fix All
+   * Findings with AI" sends this entire array so one batch covers the workspace
+   * instead of only the currently selected card.
+   */
+  const copilotFindings = useMemo<CopilotFixAllFinding[]>(() => {
+    if (!data) return [];
+    return data.vulns
+      .filter((finding) => !applied[finding.id])
+      .map((finding) => ({
+        vulnerabilityId: finding.id,
+        title: finding.title,
+        severity: finding.severity,
+        cwe: finding.cwe_id,
+        filePath: finding.file_path,
+        vulnerableCode: finding.vulnerable_code_block,
+        fixedCode: finding.fixed_code_block,
+        startLine: finding.line_start,
+        endLine: finding.line_end,
+        remediation: finding.remediation_steps,
+      }));
+  }, [applied, data]);
+
   if (isLoading || !data) {
     // Keep the shell frame consistent while the report loads; hard failures get
     // a retry action instead of a perpetual spinner.
@@ -240,9 +284,20 @@ function ScanReport() {
   /**
    * Writes a finding's suggested fix into the live source and records the
    * applied patch, so highlights, the pending-PR batch and the Copilot panel
-   * stay in sync. Shared by "Apply Patch" and Copilot's "Apply Fix & Resolve".
+   * stay in sync. Shared by "Apply Patch", Copilot's "Apply Fix & Resolve" and
+   * the batch "Fix All & Apply Patches" turn.
+   *
+   * `draft` is passed by the batch handler: it applies every patch against one
+   * evolving copy and commits once at the end, because line offsets change with
+   * each patch and React state would still hold the pre-batch values.
    */
-  const applyFindingToEditor = (v: VulnCardData): PatchApplication => {
+  const applyFindingToEditor = (
+    v: VulnCardData,
+    draft?: EditorDraft,
+  ): PatchApplication => {
+    const sourceCode = draft?.code ?? displayedCode;
+    const patches = draft?.patches ?? appliedPatches;
+
     if (!v.line_start || !v.line_end) {
       return {
         ok: false,
@@ -251,7 +306,7 @@ function ScanReport() {
     }
 
     if (
-      Object.values(appliedPatches).some(
+      Object.values(patches).some(
         (patch) =>
           patch.startLine <= v.line_end! && patch.endLine >= v.line_start!,
       )
@@ -263,7 +318,7 @@ function ScanReport() {
       };
     }
 
-    const precedingPatches = Object.values(appliedPatches)
+    const precedingPatches = Object.values(patches)
       .filter((patch) => patch.endLine < v.line_start!)
       .reduce(
         (lines, patch) =>
@@ -275,7 +330,7 @@ function ScanReport() {
     const startLine = v.line_start + precedingPatches;
     const endLine = v.line_end + precedingPatches;
     const result = applyVulnerabilityPatch(
-      displayedCode,
+      sourceCode,
       v.vulnerable_code_block,
       v.fixed_code_block,
       startLine,
@@ -283,32 +338,40 @@ function ScanReport() {
     );
     if (!result.success) return { ok: false, reason: result.reason };
 
-    setLiveCode(result.code);
-    setAppliedPatches((prev) => ({
-      ...prev,
-      [v.id]: {
-        startLine: v.line_start!,
-        endLine: v.line_end!,
-        replacementLineCount: result.replacementLineCount,
+    const nextDraft: EditorDraft = {
+      code: result.code,
+      patches: {
+        ...patches,
+        [v.id]: {
+          startLine: v.line_start,
+          endLine: v.line_end,
+          replacementLineCount: result.replacementLineCount,
+        },
       },
-    }));
-    setApplied((prev) => ({ ...prev, [v.id]: true }));
-    const flash = new Set<number>();
-    for (
-      let line = startLine;
-      line < startLine + result.replacementLineCount;
-      line++
-    ) {
-      flash.add(line);
+    };
+
+    if (!draft) {
+      setLiveCode(result.code);
+      setAppliedPatches(nextDraft.patches);
+      setApplied((prev) => ({ ...prev, [v.id]: true }));
+      const flash = new Set<number>();
+      for (
+        let line = startLine;
+        line < startLine + result.replacementLineCount;
+        line++
+      ) {
+        flash.add(line);
+      }
+      setFlashLines(flash);
+      setTimeout(() => setFlashLines(new Set()), 1500);
     }
-    setFlashLines(flash);
-    setTimeout(() => setFlashLines(new Set()), 1500);
 
     return {
       ok: true,
       startLine,
       endLine,
       replacementLineCount: result.replacementLineCount,
+      draft: nextDraft,
     };
   };
 
@@ -397,6 +460,154 @@ function ScanReport() {
       description: appliedMessage,
       pendingCount,
     };
+  };
+
+  /**
+   * "Fix All & Apply Patches" from Copilot. Applies every AI patch through the
+   * same validated patch path as a single finding, carrying one draft forward so
+   * earlier patches shift the anchors for later ones, then marks all applied
+   * findings patched and stages them for the remediation PR.
+   */
+  const handleApplyAllFixesFromCopilot = (
+    patches: CopilotBatchPatch[],
+  ): CopilotBatchApplyResult => {
+    const failures: CopilotBatchApplyResult["failures"] = [];
+    const ordered: { patch: CopilotBatchPatch; finding: VulnCardData }[] = [];
+    const seen = new Set<string>();
+
+    for (const patch of patches) {
+      const id = patch.vulnerabilityId;
+      if (!id || seen.has(id)) continue;
+      seen.add(id);
+
+      const finding = vulns.find((v) => v.id === id);
+      if (!finding) {
+        failures.push({
+          vulnerabilityId: id,
+          reason:
+            "This finding is no longer part of the loaded report. Refresh the workspace and try again.",
+        });
+        continue;
+      }
+      ordered.push({ patch, finding });
+    }
+
+    // Apply top-down so each finding's original line range is still valid once
+    // the preceding (already applied) patches have shifted it.
+    ordered.sort(
+      (a, b) => (a.finding.line_start ?? 0) - (b.finding.line_start ?? 0),
+    );
+
+    let draft: EditorDraft = {
+      code: displayedCode,
+      patches: { ...appliedPatches },
+    };
+    const appliedIds: string[] = [];
+    const skippedIds: string[] = [];
+    const flash = new Set<number>();
+
+    for (const { patch, finding } of ordered) {
+      if (draft.patches[finding.id]) {
+        skippedIds.push(finding.id);
+        continue;
+      }
+
+      const aiFix = patch.fixedCode?.trim();
+      let outcome: PatchApplication = aiFix
+        ? applyFindingToEditor(
+            { ...finding, fixed_code_block: patch.fixedCode },
+            draft,
+          )
+        : {
+            ok: false,
+            reason: "DeepSeek returned no replacement code.",
+          };
+
+      // The AI replacement can miss the anchor (e.g. it re-indented the block).
+      // The finding's own scan-validated remediation is the safe fallback.
+      if (!outcome.ok && patch.fixedCode !== finding.fixed_code_block) {
+        const fallback = applyFindingToEditor(finding, draft);
+        if (fallback.ok) outcome = fallback;
+      }
+
+      if (!outcome.ok) {
+        failures.push({
+          vulnerabilityId: finding.id,
+          title: finding.title,
+          reason: outcome.reason,
+        });
+        continue;
+      }
+
+      appliedIds.push(finding.id);
+      draft = outcome.draft;
+      for (
+        let line = outcome.startLine;
+        line < outcome.startLine + outcome.replacementLineCount;
+        line++
+      ) {
+        flash.add(line);
+      }
+    }
+
+    if (appliedIds.length > 0) {
+      setLiveCode(draft.code);
+      setAppliedPatches(draft.patches);
+      setApplied((prev) => {
+        const next = { ...prev };
+        for (const id of appliedIds) next[id] = true;
+        return next;
+      });
+      if (flash.size > 0) {
+        setFlashLines(new Set(flash));
+        setTimeout(() => setFlashLines(new Set()), 1500);
+      }
+    }
+
+    const newlyStaged = appliedIds.filter((id) => !submittedPatchIds.has(id));
+    const pendingCount = new Set([...pendingPatchIds, ...newlyStaged]).size;
+    const skippedNote =
+      skippedIds.length > 0
+        ? ` ${skippedIds.length} finding${skippedIds.length === 1 ? " was" : "s were"} already patched.`
+        : "";
+
+    return {
+      ok: appliedIds.length > 0,
+      applied: appliedIds.length,
+      failed: failures.length,
+      total: patches.length,
+      pendingCount,
+      description:
+        appliedIds.length > 0
+          ? `${appliedIds.length} of ${patches.length} patch${
+              patches.length === 1 ? "" : "es"
+            } applied to the live workspace.${skippedNote}`
+          : (failures[0]?.reason ??
+            "No unpatched findings were available to patch."),
+      ...(failures.length > 0 ? { failures } : {}),
+    };
+  };
+
+  /**
+   * Header "Fix All Findings with AI": clears any single-finding target, asks
+   * the panel to start the batch turn with the entire unpatched set, and brings
+   * the panel into view.
+   */
+  const handleFixAllWithCopilot = () => {
+    if (copilotFindings.length === 0) {
+      toast.info("No unpatched findings", {
+        description: "Every finding in this scan is already patched.",
+      });
+      return;
+    }
+    setCopilotFinding(null);
+    setCopilotFixAllSignal((signal) => signal + 1);
+    requestAnimationFrame(() => {
+      copilotSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    });
   };
 
   const appliedCount = Object.values(applied).filter(Boolean).length;
@@ -547,8 +758,11 @@ function ScanReport() {
               }
               pendingPatchCount={pendingPatchIds.length}
               focusSignal={copilotFocusSignal}
+              findings={copilotFindings}
+              fixAllSignal={copilotFixAllSignal}
               onClearFinding={() => setCopilotFinding(null)}
               onApplyFindingFix={handleApplyFindingFromCopilot}
+              onApplyAllFixes={handleApplyAllFixesFromCopilot}
               onApplyCode={(code) => {
                 setLiveCode(code);
                 setApplied({});
@@ -609,35 +823,61 @@ function ScanReport() {
                   click a line to inspect
                 </span>
               </div>
-              {isRepositoryScan && (
-                <div className="flex items-center gap-2">
-                  {pullRequestUrl && pendingPatchIds.length === 0 && (
-                    <Button asChild variant="outline" size="sm" className="h-8">
-                      <a href={pullRequestUrl} target="_blank" rel="noreferrer">
-                        <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
-                        View PR
-                      </a>
-                    </Button>
-                  )}
-                  <Button
-                    size="sm"
-                    className="h-8 gap-1.5"
-                    disabled={
-                      pendingPatchIds.length === 0 || creatingPullRequest
-                    }
-                    onClick={() => void handleCreateRemediationPullRequest()}
-                  >
-                    {creatingPullRequest ? (
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    ) : (
-                      <GitPullRequest className="h-3.5 w-3.5" />
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-8 gap-1.5 border-primary/40 bg-primary/10 text-primary hover:bg-primary/20 hover:text-primary"
+                  disabled={copilotFindings.length === 0}
+                  onClick={handleFixAllWithCopilot}
+                  title={
+                    copilotFindings.length === 0
+                      ? "Every finding in this scan is already patched"
+                      : "Generate and apply AI patches for every unpatched finding"
+                  }
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  Fix All Findings with AI ({copilotFindings.length})
+                </Button>
+                {isRepositoryScan && (
+                  <div className="flex items-center gap-2">
+                    {pullRequestUrl && pendingPatchIds.length === 0 && (
+                      <Button
+                        asChild
+                        variant="outline"
+                        size="sm"
+                        className="h-8"
+                      >
+                        <a
+                          href={pullRequestUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <GitPullRequest className="mr-1.5 h-3.5 w-3.5" />
+                          View PR
+                        </a>
+                      </Button>
                     )}
-                    {creatingPullRequest
-                      ? "Creating PR…"
-                      : `Create Remediation PR (${pendingPatchIds.length})`}
-                  </Button>
-                </div>
-              )}
+                    <Button
+                      size="sm"
+                      className="h-8 gap-1.5"
+                      disabled={
+                        pendingPatchIds.length === 0 || creatingPullRequest
+                      }
+                      onClick={() => void handleCreateRemediationPullRequest()}
+                    >
+                      {creatingPullRequest ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <GitPullRequest className="h-3.5 w-3.5" />
+                      )}
+                      {creatingPullRequest
+                        ? "Creating PR…"
+                        : `Create Remediation PR (${pendingPatchIds.length})`}
+                    </Button>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex-1 space-y-3 overflow-auto pb-6 pr-1">

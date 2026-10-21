@@ -2,6 +2,7 @@ import { useState, useRef, useEffect, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { diffLines, type DiffRow } from "@/lib/diff";
+import { isFixAllInstruction } from "@/lib/copilot-prompt";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import {
@@ -18,7 +19,16 @@ import {
   FileCode2,
   Target,
   X,
+  ListChecks,
 } from "lucide-react";
+
+/** Raw per-finding patch returned by a batch ("Fix All Findings") turn. */
+interface CopilotPatchPayload {
+  vulnerability_id: string;
+  file_path?: string | null;
+  vulnerable_code?: string;
+  fixed_code: string;
+}
 
 type Msg =
   | { id: string; role: "user"; text: string }
@@ -34,6 +44,8 @@ type Msg =
       applied: boolean;
       streaming?: boolean;
       failed?: boolean;
+      /** Set when DeepSeek returned a workspace-wide batch of fixes. */
+      batch?: CopilotBatch;
     };
 
 interface CopilotResult {
@@ -41,6 +53,7 @@ interface CopilotResult {
   summary: string;
   changes: string[];
   answer?: string;
+  patches?: CopilotPatchPayload[];
 }
 
 type CopilotStreamEvent =
@@ -72,16 +85,53 @@ export interface CopilotApplyResult {
   pendingCount?: number;
 }
 
+/** One unpatched finding the workspace hands to Copilot for a Fix All turn. */
+export interface CopilotFixAllFinding extends CopilotFindingTarget {
+  cwe?: string | null;
+  /** Validated remediation prose from the scan, used as prompt guidance. */
+  remediation?: string;
+}
+
+/** A DeepSeek replacement for one finding, keyed by vulnerability id. */
+export interface CopilotBatchPatch {
+  vulnerabilityId: string;
+  filePath?: string | null;
+  vulnerableCode: string;
+  fixedCode: string;
+}
+
+/** Batch preview attached to an assistant message. */
+interface CopilotBatch {
+  /** Finding set captured when the turn started (drives titles/locations). */
+  findings: CopilotFixAllFinding[];
+  patches: CopilotBatchPatch[];
+}
+
+/** Result of applying a whole batch to the workspace source. */
+export interface CopilotBatchApplyResult {
+  ok: boolean;
+  applied: number;
+  failed: number;
+  /** Patches the workspace was asked to apply (including already-patched ones). */
+  total: number;
+  /** Findings staged for the remediation PR after this batch. */
+  pendingCount?: number;
+  description: string;
+  failures?: { vulnerabilityId: string; title?: string; reason: string }[];
+}
+
 // Mirrors the server-side limits in `/api/copilot/stream`. Trimming here keeps
 // an oversized paste from being rejected with a 400 after the user waits.
 const MAX_SOURCE_CHARS = 60_000;
 const MAX_CONTEXT_CHARS = 12_000;
+const MAX_FINDING_CODE_CHARS = 4_000;
+const MAX_BATCH_FINDINGS = 100;
 
 const SUGGESTIONS = [
   "Explain the highest-risk issue in this file",
   "Fix the SQL injection vulnerability",
+  "Fix all issues in this scan",
   "Replace weak hashing with bcrypt",
-  "Sanitize all user-provided HTML inputs",
 ];
 
 function readPartialField(
@@ -181,22 +231,126 @@ function MiniDiff({ rows }: { rows: DiffRow[] }) {
   );
 }
 
+/**
+ * Reconciles DeepSeek's patches with the finding set captured at submit time:
+ * drops unknown/duplicate ids, then falls back to the scan's own validated fix
+ * for any finding the model skipped so a batch turn still covers the workspace.
+ */
+function normalizeBatchPatches(
+  raw: CopilotPatchPayload[] | undefined,
+  findings: CopilotFixAllFinding[],
+): CopilotBatchPatch[] {
+  const byId = new Map(
+    findings.map((finding) => [finding.vulnerabilityId, finding]),
+  );
+  const seen = new Set<string>();
+  const patches: CopilotBatchPatch[] = [];
+
+  for (const patch of raw ?? []) {
+    const id = patch.vulnerability_id?.trim();
+    if (!id || seen.has(id)) continue;
+
+    const finding = byId.get(id);
+    // Never apply a patch for a finding outside the batch that was submitted.
+    if (!finding) continue;
+
+    const fixedCode = patch.fixed_code?.trim();
+    if (!fixedCode) continue;
+
+    seen.add(id);
+    patches.push({
+      vulnerabilityId: id,
+      filePath: patch.file_path?.trim() || finding.filePath || null,
+      vulnerableCode: patch.vulnerable_code?.trim() || finding.vulnerableCode,
+      fixedCode,
+    });
+  }
+
+  for (const finding of findings) {
+    if (seen.has(finding.vulnerabilityId)) continue;
+    if (!finding.fixedCode.trim()) continue;
+    seen.add(finding.vulnerabilityId);
+    patches.push({
+      vulnerabilityId: finding.vulnerabilityId,
+      filePath: finding.filePath ?? null,
+      vulnerableCode: finding.vulnerableCode,
+      fixedCode: finding.fixedCode,
+    });
+  }
+
+  return patches;
+}
+
+function BatchPatchRow({
+  patch,
+  finding,
+}: {
+  patch: CopilotBatchPatch;
+  finding?: CopilotFixAllFinding;
+}) {
+  const rows = useMemo(
+    () => diffLines(patch.vulnerableCode || "", patch.fixedCode),
+    [patch.vulnerableCode, patch.fixedCode],
+  );
+  const location =
+    patch.filePath?.trim() || finding?.filePath?.trim() || "workspace source";
+
+  return (
+    <details className="rounded border border-border/50 bg-background/30">
+      <summary className="flex cursor-pointer items-center gap-1.5 px-2 py-1 text-[10.5px]">
+        <FileCode2 className="h-3 w-3 shrink-0 text-primary" />
+        <span className="truncate font-mono text-muted-foreground">
+          {location}
+        </span>
+        {finding?.startLine ? (
+          <span className="shrink-0 font-mono text-[9.5px] text-muted-foreground/70">
+            :{finding.startLine}
+          </span>
+        ) : null}
+        <span
+          className="ml-auto truncate text-foreground/80"
+          title={finding?.title ?? patch.vulnerabilityId}
+        >
+          {finding?.title ?? patch.vulnerabilityId}
+        </span>
+      </summary>
+      <div className="p-1.5">
+        <MiniDiff rows={rows} />
+      </div>
+    </details>
+  );
+}
+
 function AssistantBubble({
   msg,
   currentCode,
   onToggleDiff,
   onApply,
+  onApplyBatch,
+  applyingBatch = false,
 }: {
   msg: Extract<Msg, { role: "assistant" }>;
   currentCode: string;
   onToggleDiff: () => void;
   onApply: () => void;
+  /** "Fix All & Apply Patches" confirmation for batch turns. */
+  onApplyBatch?: () => void;
+  applyingBatch?: boolean;
 }) {
   const rows = useMemo(
     () => diffLines(currentCode, msg.updatedCode),
     [currentCode, msg.updatedCode],
   );
   const changedCount = rows.filter((r) => r.op !== "equal").length;
+  const batchFiles = useMemo(
+    () =>
+      new Set(
+        (msg.batch?.patches ?? []).map(
+          (patch) => patch.filePath?.trim() || "workspace source",
+        ),
+      ).size,
+    [msg.batch],
+  );
   // Question-style turns return no rewritten source; showing "Review changes"
   // and "Apply to Editor" for an empty patch is noise.
   const hasPatch = msg.updatedCode.trim().length > 0;
@@ -231,6 +385,57 @@ function AssistantBubble({
             </ul>
           )}
         </div>
+        {!msg.streaming &&
+          !msg.failed &&
+          msg.batch &&
+          msg.batch.patches.length > 0 && (
+            <div className="space-y-2 rounded-md border border-primary/40 bg-primary/[0.06] p-2">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1 text-[10px] uppercase tracking-widest text-primary">
+                  <ListChecks className="h-3 w-3" />
+                  Batch remediation · {msg.batch.patches.length} finding
+                  {msg.batch.patches.length === 1 ? "" : "s"} · {batchFiles}{" "}
+                  file
+                  {batchFiles === 1 ? "" : "s"}
+                </div>
+                {msg.applied && (
+                  <span className="inline-flex items-center gap-1 text-[10px] text-low">
+                    <CheckCircle2 className="h-3 w-3" /> Applied
+                  </span>
+                )}
+              </div>
+              <div className="space-y-1">
+                {msg.batch.patches.map((patch) => (
+                  <BatchPatchRow
+                    key={patch.vulnerabilityId}
+                    patch={patch}
+                    finding={msg.batch?.findings.find(
+                      (f) => f.vulnerabilityId === patch.vulnerabilityId,
+                    )}
+                  />
+                ))}
+              </div>
+              <Button
+                size="sm"
+                onClick={onApplyBatch}
+                disabled={!onApplyBatch || applyingBatch || msg.applied}
+                className="h-7 w-full gap-1 bg-primary px-2 text-[11px] text-primary-foreground hover:opacity-90"
+              >
+                {applyingBatch ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : msg.applied ? (
+                  <CheckCircle2 className="h-3 w-3" />
+                ) : (
+                  <Wand2 className="h-3 w-3" />
+                )}
+                {msg.applied
+                  ? "Patches applied"
+                  : applyingBatch
+                    ? "Applying patches…"
+                    : "Fix All & Apply Patches"}
+              </Button>
+            </div>
+          )}
         {!msg.streaming && !msg.failed && hasPatch && (
           <div className="flex flex-wrap gap-1.5">
             <button
@@ -271,6 +476,9 @@ export function CopilotChat({
   focusSignal = 0,
   onClearFinding,
   onApplyFindingFix,
+  findings = [],
+  fixAllSignal = 0,
+  onApplyAllFixes,
 }: {
   /** Optional: the copilot answers questions even with no file loaded. */
   sourceCode?: string;
@@ -294,6 +502,20 @@ export function CopilotChat({
   onApplyFindingFix?: (
     target: CopilotFindingTarget,
   ) => CopilotApplyResult | Promise<CopilotApplyResult>;
+  /**
+   * Every unpatched finding in the scan. Sent with a "Fix All Findings with AI"
+   * turn so DeepSeek can remediate the whole workspace in one batch.
+   */
+  findings?: CopilotFixAllFinding[];
+  /** Increment to start a workspace-wide batch turn (header button). */
+  fixAllSignal?: number;
+  /**
+   * "Fix All & Apply Patches": applies the batch sequentially to the in-memory
+   * workspace and marks each finding patched. Reports failures per finding.
+   */
+  onApplyAllFixes?: (
+    patches: CopilotBatchPatch[],
+  ) => CopilotBatchApplyResult | Promise<CopilotBatchApplyResult>;
 }) {
   const code = sourceCode ?? "";
   const language = fileType?.trim() || "text";
@@ -309,6 +531,7 @@ export function CopilotChat({
   const loadingRef = useRef(false);
 
   const [applyingFinding, setApplyingFinding] = useState(false);
+  const [applyingBatch, setApplyingBatch] = useState(false);
   const [resolvedFindingId, setResolvedFindingId] = useState<string | null>(
     null,
   );
@@ -352,9 +575,17 @@ export function CopilotChat({
     abortRef.current = null;
   };
 
-  const submit = async (text: string) => {
+  const submit = async (text: string, options?: { fixAll?: boolean }) => {
     const instruction = text.trim();
     if (!instruction || loadingRef.current) return;
+
+    // Batch scope is captured before the request so findings patched while the
+    // model streams cannot change the ids the response is reconciled against.
+    const batchFindings =
+      options?.fixAll === true || isFixAllInstruction(instruction)
+        ? findings.slice(0, MAX_BATCH_FINDINGS)
+        : [];
+    const batchMode = batchFindings.length > 0;
 
     loadingRef.current = true;
     setInput("");
@@ -373,7 +604,9 @@ export function CopilotChat({
         role: "assistant",
         summary: "",
         changes: [],
-        updatedCode: code,
+        // Batch turns never rewrite one file; the per-finding patches carry the
+        // diff, so the single-file "Apply to Editor" affordance stays hidden.
+        updatedCode: batchMode ? "" : code,
         diffOpen: false,
         applied: true,
         streaming: true,
@@ -385,11 +618,17 @@ export function CopilotChat({
     // edited in place as tokens arrive, so progress is visible even when the
     // chat panel is scrolled or collapsed.
     const toastId = toast.loading(
-      code.trim() ? "Copilot is reading your file…" : "Copilot is thinking…",
+      batchMode
+        ? `Remediating ${batchFindings.length} finding${batchFindings.length === 1 ? "" : "s"}…`
+        : code.trim()
+          ? "Copilot is reading your file…"
+          : "Copilot is thinking…",
       {
-        description: context?.trim()
-          ? "Using the selected finding as context."
-          : "Streaming a response from DeepSeek.",
+        description: batchMode
+          ? "DeepSeek is generating a workspace-wide patch set."
+          : context?.trim()
+            ? "Using the selected finding as context."
+            : "Streaming a response from DeepSeek.",
       },
     );
     let lastToastAt = 0;
@@ -414,7 +653,31 @@ export function CopilotChat({
           instruction,
           source_code: code.slice(0, MAX_SOURCE_CHARS),
           file_type: language,
-          context: context?.slice(0, MAX_CONTEXT_CHARS),
+          // A batch turn is driven by the finding array, not by one target.
+          context: batchMode ? undefined : context?.slice(0, MAX_CONTEXT_CHARS),
+          ...(batchMode
+            ? {
+                mode: "fix_all",
+                findings: batchFindings.map((finding) => ({
+                  id: finding.vulnerabilityId,
+                  title: finding.title?.trim() || "Reported finding",
+                  severity: finding.severity,
+                  cwe: finding.cwe ?? undefined,
+                  file_path: finding.filePath ?? null,
+                  line_start: finding.startLine ?? null,
+                  line_end: finding.endLine ?? null,
+                  vulnerable_code: finding.vulnerableCode.slice(
+                    0,
+                    MAX_FINDING_CODE_CHARS,
+                  ),
+                  fixed_code: finding.fixedCode.slice(
+                    0,
+                    MAX_FINDING_CODE_CHARS,
+                  ),
+                  remediation: finding.remediation?.slice(0, 2_000),
+                })),
+              }
+            : {}),
         }),
       });
       if (!response.ok) {
@@ -492,6 +755,13 @@ export function CopilotChat({
       if (!result)
         throw new Error("Copilot stream ended before a response arrived.");
       const finalResult: CopilotResult = result;
+      const batchPatches = batchMode
+        ? normalizeBatchPatches(finalResult.patches, batchFindings)
+        : [];
+      const batchPayload: CopilotBatch | undefined =
+        batchPatches.length > 0
+          ? { findings: batchFindings, patches: batchPatches }
+          : undefined;
 
       setMessages((current) =>
         current.map((message) =>
@@ -501,24 +771,52 @@ export function CopilotChat({
                 summary: finalResult.summary,
                 answer: finalResult.answer,
                 changes: finalResult.changes,
-                updatedCode: finalResult.updated_code,
-                applied: finalResult.updated_code.trim().length === 0,
+                updatedCode: batchMode ? "" : finalResult.updated_code,
+                // A batch turn is only "applied" once the user confirms the
+                // patch list; the single-file turn has nothing to apply when it
+                // returned no rewritten source.
+                applied: batchMode
+                  ? false
+                  : finalResult.updated_code.trim().length === 0,
+                batch: batchPayload,
                 streaming: false,
               }
             : message,
         ),
       );
 
-      toast.success(
-        finalResult.updated_code.trim().length > 0
-          ? "Patch ready to review"
-          : "Copilot answered",
-        {
-          id: toastId,
-          description: finalResult.summary,
-          duration: 6000,
-        },
-      );
+      if (batchMode) {
+        if (batchPayload) {
+          toast.success(
+            `Batch remediation ready — ${batchPayload.patches.length} finding${
+              batchPayload.patches.length === 1 ? "" : "s"
+            }`,
+            {
+              id: toastId,
+              description:
+                "Review the patches, then apply them to the workspace.",
+              duration: 7000,
+            },
+          );
+        } else {
+          toast.warning("Copilot returned no applicable patches", {
+            id: toastId,
+            description: finalResult.summary,
+            duration: 8000,
+          });
+        }
+      } else {
+        toast.success(
+          finalResult.updated_code.trim().length > 0
+            ? "Patch ready to review"
+            : "Copilot answered",
+          {
+            id: toastId,
+            description: finalResult.summary,
+            duration: 6000,
+          },
+        );
+      }
     } catch (err) {
       const aborted =
         controller.signal.aborted ||
@@ -558,6 +856,104 @@ export function CopilotChat({
       setLoading(false);
       // Keep the composer ready for the next question.
       requestAnimationFrame(() => inputRef.current?.focus());
+    }
+  };
+
+  /**
+   * "Fix All Findings with AI" — sends the scan's entire unpatched set in one
+   * DeepSeek turn and renders a per-finding patch preview.
+   */
+  const startFixAll = () => {
+    if (loadingRef.current || applyingBatch) return;
+    if (findings.length === 0) {
+      toast.info("No unpatched findings", {
+        description: "Every finding in this scan is already patched.",
+      });
+      return;
+    }
+    void submit(
+      `Fix all ${findings.length} remaining findings in this scan and return a patch for each one.`,
+      { fixAll: true },
+    );
+  };
+
+  // The scan page owns the header button; it increments `fixAllSignal` to ask
+  // this panel to start the same batch turn. A ref keeps the effect from
+  // depending on every render's `submit` closure.
+  const startFixAllRef = useRef(startFixAll);
+  startFixAllRef.current = startFixAll;
+  const lastFixAllSignalRef = useRef(fixAllSignal);
+  useEffect(() => {
+    if (fixAllSignal === lastFixAllSignalRef.current) return;
+    lastFixAllSignalRef.current = fixAllSignal;
+    startFixAllRef.current();
+  }, [fixAllSignal]);
+
+  const applyBatch = async (msg: Extract<Msg, { role: "assistant" }>) => {
+    if (!msg.batch || !onApplyAllFixes || applyingBatch) return;
+    const { patches } = msg.batch;
+    if (patches.length === 0) return;
+
+    setApplyingBatch(true);
+    const toastId = toast.loading(
+      `Applying ${patches.length} AI fix${patches.length === 1 ? "" : "es"} to the workspace…`,
+    );
+    try {
+      const result = await onApplyAllFixes(patches);
+      if (result.applied === 0) {
+        toast.error("No fixes could be applied", {
+          id: toastId,
+          description:
+            result.description ||
+            result.failures?.[0]?.reason ||
+            "Review the patch set and try again.",
+          duration: 9000,
+        });
+        return;
+      }
+
+      setMessages((prev) =>
+        prev.map((entry) =>
+          entry.id === msg.id && entry.role === "assistant"
+            ? { ...entry, applied: true }
+            : entry,
+        ),
+      );
+
+      const queued = result.pendingCount ?? 0;
+      const failureNote =
+        result.failed > 0
+          ? ` ${result.failed} finding${result.failed === 1 ? "" : "s"} could not be patched${
+              result.failures?.length
+                ? `: ${result.failures
+                    .slice(0, 2)
+                    .map((failure) => failure.title ?? failure.vulnerabilityId)
+                    .join(", ")}`
+                : ""
+            }.`
+          : "";
+
+      toast.success(
+        `Successfully applied fixes for ${result.applied} finding${
+          result.applied === 1 ? "" : "s"
+        } across workspace`,
+        {
+          id: toastId,
+          description: `${
+            queued > 0
+              ? `${queued} finding${queued === 1 ? "" : "s"} queued for Create Remediation PR.`
+              : result.description
+          }${failureNote}`,
+          duration: 9000,
+        },
+      );
+    } catch (err) {
+      toast.error("Batch remediation failed", {
+        id: toastId,
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setApplyingBatch(false);
     }
   };
 
@@ -653,6 +1049,29 @@ export function CopilotChat({
           {language}
         </span>
       </div>
+
+      {findings.length > 0 && (
+        <div className="flex items-center justify-between gap-2 border-b border-primary/20 bg-primary/[0.04] px-3 py-1.5">
+          <Button
+            type="button"
+            size="sm"
+            onClick={startFixAll}
+            disabled={loading || applyingBatch}
+            aria-label={`Fix all ${findings.length} findings with AI`}
+            className="h-7 gap-1 bg-primary px-2 text-[11px] text-primary-foreground hover:opacity-90"
+          >
+            {loading ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              <Sparkles className="h-3 w-3" />
+            )}
+            Fix All Findings with AI
+          </Button>
+          <span className="text-[9.5px] uppercase tracking-widest text-muted-foreground">
+            {findings.length} unpatched
+          </span>
+        </div>
+      )}
 
       {activeFinding && (
         <div className="border-b border-primary/30 bg-primary/[0.06] px-3 py-2">
@@ -820,6 +1239,10 @@ export function CopilotChat({
                   description: m.summary,
                 });
               }}
+              onApplyBatch={
+                onApplyAllFixes ? () => void applyBatch(m) : undefined
+              }
+              applyingBatch={applyingBatch}
             />
           ),
         )}
