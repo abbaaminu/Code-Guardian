@@ -4,6 +4,8 @@ import { Button } from "./ui/button";
 import { Input } from "./ui/input";
 import { Textarea } from "./ui/textarea";
 import { runAgentTask } from "@/lib/agent.functions";
+import { isMissingGithubCredentialError } from "@/lib/github/connect-error";
+import { openConnectGithubModal } from "@/lib/github/connect-modal-store";
 import { toast } from "sonner";
 import {
   Bot,
@@ -63,11 +65,23 @@ export function AgentPanel() {
         });
       }
     } catch (err) {
-      setError(
+      const message =
         err instanceof Error
           ? err.message
-          : "An unexpected error occurred during agent execution.",
-      );
+          : "An unexpected error occurred during agent execution.";
+      setError(message);
+      // The agent writes to GitHub, so a missing personal token is recoverable
+      // right here instead of forcing the user to hunt through settings.
+      if (isMissingGithubCredentialError(message)) {
+        toast.error("Connect GitHub to run repository tasks", {
+          description: message,
+          action: {
+            label: "Connect GitHub",
+            onClick: () => openConnectGithubModal(),
+          },
+          duration: 12000,
+        });
+      }
     } finally {
       setLoading(false);
     }

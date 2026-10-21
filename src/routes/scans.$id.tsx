@@ -7,6 +7,10 @@ import { CodeVault } from "@/components/code-vault";
 import { VulnCard, type VulnCardData } from "@/components/vuln-card";
 import { WorkspaceActionBar } from "@/components/workspace-action-bar";
 import { CopilotChat } from "@/components/copilot-chat";
+import type {
+  CopilotApplyResult,
+  CopilotFindingTarget,
+} from "@/components/copilot-chat";
 import {
   RouteErrorFallback,
   RoutePendingFallback,
@@ -27,12 +31,24 @@ import {
   authorizeGithubRepository,
   createRemediationPullRequest,
 } from "@/lib/github/patch.functions";
+import { openConnectGithubModal } from "@/lib/github/connect-modal-store";
+import { isMissingGithubCredentialError } from "@/lib/github/connect-error";
 import { useServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 
 export interface ScanReportLoaderData {
   scanId: string;
 }
+
+/** Result of writing a finding's suggested fix into the live workspace code. */
+type PatchApplication =
+  | {
+      ok: true;
+      startLine: number;
+      endLine: number;
+      replacementLineCount: number;
+    }
+  | { ok: false; reason: string };
 
 export const Route = createFileRoute("/scans/$id")({
   head: ({ params }: { params: { id: string } }) => ({
@@ -100,6 +116,12 @@ function ScanReport() {
     new Set(),
   );
   const [pullRequestUrl, setPullRequestUrl] = useState<string | null>(null);
+  // "Fix with Copilot" target + signal (re-clicking the same card scrolls and
+  // refocuses the composer) live here so the card and panel stay decoupled.
+  const [copilotFinding, setCopilotFinding] =
+    useState<CopilotFindingTarget | null>(null);
+  const [copilotFocusSignal, setCopilotFocusSignal] = useState(0);
+  const copilotSectionRef = useRef<HTMLElement>(null);
   const cardRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   const { data, isLoading, isError, refetch } = useScanReportQuery(scanId);
@@ -215,12 +237,17 @@ function ScanReport() {
     setActiveId((cur) => (cur === vulnId ? null : vulnId));
   };
 
-  const handleApply = async (v: VulnCardData) => {
+  /**
+   * Writes a finding's suggested fix into the live source and records the
+   * applied patch, so highlights, the pending-PR batch and the Copilot panel
+   * stay in sync. Shared by "Apply Patch" and Copilot's "Apply Fix & Resolve".
+   */
+  const applyFindingToEditor = (v: VulnCardData): PatchApplication => {
     if (!v.line_start || !v.line_end) {
-      toast.error("Patch not applied", {
-        description: "No valid line range is available for this finding.",
-      });
-      return;
+      return {
+        ok: false,
+        reason: "No valid line range is available for this finding.",
+      };
     }
 
     if (
@@ -229,11 +256,11 @@ function ScanReport() {
           patch.startLine <= v.line_end! && patch.endLine >= v.line_start!,
       )
     ) {
-      toast.error("Patch not applied", {
-        description:
+      return {
+        ok: false,
+        reason:
           "This finding overlaps a patch already applied. Start again from the original source to avoid overwriting changes.",
-      });
-      return;
+      };
     }
 
     const precedingPatches = Object.values(appliedPatches)
@@ -254,10 +281,7 @@ function ScanReport() {
       startLine,
       endLine,
     );
-    if (!result.success) {
-      toast.error("Patch not applied", { description: result.reason });
-      return;
-    }
+    if (!result.success) return { ok: false, reason: result.reason };
 
     setLiveCode(result.code);
     setAppliedPatches((prev) => ({
@@ -278,21 +302,104 @@ function ScanReport() {
       flash.add(line);
     }
     setFlashLines(flash);
+    setTimeout(() => setFlashLines(new Set()), 1500);
+
+    return {
+      ok: true,
+      startLine,
+      endLine,
+      replacementLineCount: result.replacementLineCount,
+    };
+  };
+
+  // Findings staged for the next remediation PR. Declared before the handlers
+  // that report the queued count so their closures read a settled value.
+  const pendingPatchIds = Object.keys(appliedPatches).filter(
+    (id) => !submittedPatchIds.has(id),
+  );
+
+  const handleApply = async (v: VulnCardData) => {
+    const outcome = applyFindingToEditor(v);
+    if (!outcome.ok) {
+      toast.error("Patch not applied", { description: outcome.reason });
+      return;
+    }
     toast.success(
       data.scan.repo_owner && data.scan.repo_name
         ? "Patch staged for GitHub"
         : "Patch applied to displayed source",
       {
-        description: `Replaced the vulnerable snippet at lines ${startLine}-${endLine}.`,
+        description: `Replaced the vulnerable snippet at lines ${outcome.startLine}-${outcome.endLine}.`,
       },
     );
-    setTimeout(() => setFlashLines(new Set()), 1500);
+  };
+
+  /**
+   * "Fix with Copilot": preload the chat panel with this finding, expand the
+   * card and bring the panel into view. Repeat clicks re-focus the composer
+   * through `copilotFocusSignal` even though the target didn't change.
+   */
+  const handleFixWithCopilot = (v: VulnCardData) => {
+    setCopilotFinding({
+      vulnerabilityId: v.id,
+      title: v.title,
+      severity: v.severity,
+      filePath: v.file_path,
+      vulnerableCode: v.vulnerable_code_block,
+      fixedCode: v.fixed_code_block,
+      startLine: v.line_start,
+      endLine: v.line_end,
+    });
+    setActiveId(v.id);
+    setCopilotFocusSignal((signal) => signal + 1);
+    requestAnimationFrame(() => {
+      copilotSectionRef.current?.scrollIntoView({
+        behavior: "smooth",
+        block: "nearest",
+      });
+    });
+  };
+
+  /**
+   * "Apply Fix & Resolve" from the Copilot panel. Applies the same validated
+   * patch path as the card (overlap + anchor checks included) and reports the
+   * queued count so the panel can confirm the pending remediation PR batch.
+   */
+  const handleApplyFindingFromCopilot = (
+    target: CopilotFindingTarget,
+  ): CopilotApplyResult => {
+    const finding = vulns.find((v) => v.id === target.vulnerabilityId);
+    if (!finding) {
+      return {
+        ok: false,
+        description:
+          "This finding is no longer part of the loaded report. Refresh the workspace and try again.",
+      };
+    }
+    if (applied[finding.id]) {
+      return {
+        ok: true,
+        description: `${finding.title} is already patched.`,
+        pendingCount: pendingPatchIds.length,
+      };
+    }
+    const outcome = applyFindingToEditor(finding);
+    if (!outcome.ok) return { ok: false, description: outcome.reason };
+
+    const appliedMessage = `Lines ${outcome.startLine}-${outcome.endLine} replaced in the live code.`;
+    // A finding that was already part of a submitted PR doesn't add to the next
+    // batch — `pendingPatchIds` deliberately excludes submitted findings.
+    const pendingCount = submittedPatchIds.has(finding.id)
+      ? pendingPatchIds.length
+      : pendingPatchIds.length + 1;
+    return {
+      ok: true,
+      description: appliedMessage,
+      pendingCount,
+    };
   };
 
   const appliedCount = Object.values(applied).filter(Boolean).length;
-  const pendingPatchIds = Object.keys(appliedPatches).filter(
-    (id) => !submittedPatchIds.has(id),
-  );
   const isRepositoryScan = Boolean(data.scan.repo_owner && data.scan.repo_name);
 
   const handleCreateRemediationPullRequest = async () => {
@@ -347,11 +454,29 @@ function ScanReport() {
           : {}),
       });
     } catch (error) {
-      toast.error("Could not create remediation pull request", {
-        id: toastId,
-        description:
-          error instanceof Error ? error.message : "Please try again.",
-      });
+      const message =
+        error instanceof Error ? error.message : "Please try again.";
+      // Missing/expired vault credentials are user-fixable: offer the inline
+      // Connect GitHub flow instead of a dead-end error.
+      const needsGithubCredential = isMissingGithubCredentialError(message);
+      toast.error(
+        needsGithubCredential
+          ? "Connect GitHub to create remediation PRs"
+          : "Could not create remediation pull request",
+        {
+          id: toastId,
+          description: message,
+          ...(needsGithubCredential
+            ? {
+                action: {
+                  label: "Connect GitHub",
+                  onClick: () => openConnectGithubModal(),
+                },
+                duration: 12000,
+              }
+            : {}),
+        },
+      );
     } finally {
       setCreatingPullRequest(false);
     }
@@ -406,11 +531,24 @@ function ScanReport() {
           </section>
 
           {/* MIDDLE — AI Copilot Chat */}
-          <section className="min-w-0 h-[calc(100vh-3.5rem)]">
+          <section
+            ref={copilotSectionRef}
+            className="min-w-0 h-[calc(100vh-3.5rem)]"
+          >
             <CopilotChat
               sourceCode={displayedCode}
               fileType={scan.file_type}
               context={copilotContext}
+              activeFinding={copilotFinding}
+              activeFindingApplied={
+                copilotFinding
+                  ? !!applied[copilotFinding.vulnerabilityId]
+                  : false
+              }
+              pendingPatchCount={pendingPatchIds.length}
+              focusSignal={copilotFocusSignal}
+              onClearFinding={() => setCopilotFinding(null)}
+              onApplyFindingFix={handleApplyFindingFromCopilot}
               onApplyCode={(code) => {
                 setLiveCode(code);
                 setApplied({});
@@ -523,6 +661,7 @@ function ScanReport() {
                     applied={!!applied[v.id]}
                     onToggle={() => handleToggle(v.id)}
                     onApply={() => handleApply(v)}
+                    onFixWithCopilot={handleFixWithCopilot}
                   />
                 ))
               )}

@@ -1,5 +1,11 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { LayoutDashboard, ShieldCheck, ScanSearch, Radar } from "lucide-react";
+import {
+  LayoutDashboard,
+  ShieldCheck,
+  ScanSearch,
+  Radar,
+  Github,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -12,6 +18,7 @@ import {
   SidebarMenuItem,
   SidebarFooter,
 } from "@/components/ui/sidebar";
+import { openConnectGithubModal } from "@/lib/github/connect-modal-store";
 
 const items = [
   { title: "Scan Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -67,6 +74,17 @@ export function AppSidebar() {
         </SidebarGroup>
       </SidebarContent>
       <SidebarFooter>
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              onClick={openConnectGithubModal}
+              tooltip="Connect GitHub"
+            >
+              <Github />
+              <span>Connect GitHub</span>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <div className="rounded-md border border-border/60 bg-card/50 p-2 text-[11px] text-muted-foreground group-data-[collapsible=icon]:hidden">
           <div className="flex items-center gap-1.5">
             <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />

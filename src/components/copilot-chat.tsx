@@ -14,6 +14,10 @@ import {
   Sparkles,
   Terminal,
   Square,
+  CheckCircle2,
+  FileCode2,
+  Target,
+  X,
 } from "lucide-react";
 
 type Msg =
@@ -43,6 +47,30 @@ type CopilotStreamEvent =
   | { type: "delta"; delta: string }
   | { type: "done"; result: CopilotResult }
   | { type: "error"; message: string };
+
+/**
+ * Minimal payload the report route hands to Copilot when the user clicks
+ * "Fix with Copilot" on a finding. Kept structurally typed (no import from the
+ * scan domain) so the panel stays usable outside the scan workspace.
+ */
+export interface CopilotFindingTarget {
+  vulnerabilityId: string;
+  title?: string;
+  severity?: string;
+  filePath?: string | null;
+  vulnerableCode: string;
+  fixedCode: string;
+  startLine?: number | null;
+  endLine?: number | null;
+}
+
+/** Outcome of "Apply Fix & Resolve" handed back by the report workspace. */
+export interface CopilotApplyResult {
+  ok: boolean;
+  description: string;
+  /** Findings currently staged for the remediation PR, after this apply. */
+  pendingCount?: number;
+}
 
 // Mirrors the server-side limits in `/api/copilot/stream`. Trimming here keeps
 // an oversized paste from being rejected with a 400 after the user waits.
@@ -237,12 +265,35 @@ export function CopilotChat({
   fileType,
   onApplyCode,
   context,
+  activeFinding,
+  activeFindingApplied = false,
+  pendingPatchCount,
+  focusSignal = 0,
+  onClearFinding,
+  onApplyFindingFix,
 }: {
   /** Optional: the copilot answers questions even with no file loaded. */
   sourceCode?: string;
   fileType?: string;
   onApplyCode?: (code: string) => void;
   context?: string;
+  /** Finding targeted by "Fix with Copilot" on a vulnerability card. */
+  activeFinding?: CopilotFindingTarget | null;
+  /** True when the targeted finding was already patched in the workspace. */
+  activeFindingApplied?: boolean;
+  /** Findings staged for the next remediation PR (shown on the target card). */
+  pendingPatchCount?: number;
+  /** Increment to re-focus the composer when the same finding is re-targeted. */
+  focusSignal?: number;
+  onClearFinding?: () => void;
+  /**
+   * "Apply Fix & Resolve": writes the suggested fix into the live code and
+   * marks the finding patched. Returns a result so the panel can toast the
+   * exact outcome (overlap, stale finding, success + queued count).
+   */
+  onApplyFindingFix?: (
+    target: CopilotFindingTarget,
+  ) => CopilotApplyResult | Promise<CopilotApplyResult>;
 }) {
   const code = sourceCode ?? "";
   const language = fileType?.trim() || "text";
@@ -256,6 +307,12 @@ export function CopilotChat({
   // Mirrors `loading` for handlers that may fire between renders (suggestion
   // click + Enter in the same tick), so a turn can't be submitted twice.
   const loadingRef = useRef(false);
+
+  const [applyingFinding, setApplyingFinding] = useState(false);
+  const [resolvedFindingId, setResolvedFindingId] = useState<string | null>(
+    null,
+  );
+  const targetId = activeFinding?.vulnerabilityId ?? null;
 
   useEffect(() => {
     scrollRef.current?.scrollTo({
@@ -275,6 +332,20 @@ export function CopilotChat({
 
   // Never leave an upstream request running after unmount/navigation.
   useEffect(() => () => abortRef.current?.abort(), []);
+
+  // A new target means a fresh, unresolved finding.
+  useEffect(() => {
+    setResolvedFindingId(null);
+  }, [targetId]);
+
+  // Opening/focusing the panel (or re-clicking "Fix with Copilot" on the same
+  // card) should land the caret in the composer without stealing focus while
+  // the user is typing elsewhere.
+  useEffect(() => {
+    if (!targetId && !focusSignal) return;
+    const frame = requestAnimationFrame(() => inputRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [targetId, focusSignal]);
 
   const stop = () => {
     abortRef.current?.abort();
@@ -490,6 +561,74 @@ export function CopilotChat({
     }
   };
 
+  const isActiveFindingResolved =
+    Boolean(activeFindingApplied) ||
+    (targetId !== null && resolvedFindingId === targetId);
+
+  const applyTargetFinding = async () => {
+    if (!activeFinding || !onApplyFindingFix || applyingFinding) return;
+    setApplyingFinding(true);
+    try {
+      const result = await onApplyFindingFix(activeFinding);
+      if (!result.ok) {
+        toast.error("Copilot could not apply the fix", {
+          description: result.description,
+          duration: 8000,
+        });
+        return;
+      }
+      setResolvedFindingId(activeFinding.vulnerabilityId);
+      const queued =
+        typeof result.pendingCount === "number" ? result.pendingCount : 0;
+      toast.success("Fix applied — finding resolved", {
+        description: `${result.description}${
+          queued > 0
+            ? ` ${queued} finding${queued === 1 ? "" : "s"} queued for Create Remediation PR.`
+            : ""
+        }`,
+        duration: 7000,
+      });
+    } catch (err) {
+      toast.error("Copilot could not apply the fix", {
+        description: err instanceof Error ? err.message : "Please try again.",
+      });
+    } finally {
+      setApplyingFinding(false);
+    }
+  };
+
+  const askAboutFinding = () => {
+    if (!activeFinding) return;
+    const location = activeFinding.filePath || "the current file";
+    const lines = activeFinding.startLine
+      ? ` (lines ${activeFinding.startLine}-${
+          activeFinding.endLine ?? activeFinding.startLine
+        })`
+      : "";
+    void submit(
+      [
+        `Fix the security finding "${activeFinding.title ?? "reported finding"}" in ${location}${lines}.`,
+        "",
+        "Vulnerable code:",
+        activeFinding.vulnerableCode || "(not provided)",
+        "",
+        "Suggested fix:",
+        activeFinding.fixedCode || "(not provided)",
+        "",
+        "Return the complete updated file with the vulnerability remediated.",
+      ].join("\n"),
+    );
+  };
+
+  const targetLineLabel = activeFinding?.startLine
+    ? `:${activeFinding.startLine}${
+        activeFinding.endLine &&
+        activeFinding.endLine !== activeFinding.startLine
+          ? `-${activeFinding.endLine}`
+          : ""
+      }`
+    : "";
+
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-primary/30 bg-[oklch(0.12_0.02_250)] shadow-[0_0_40px_-20px_var(--primary)]">
       <div className="flex items-center justify-between border-b border-border/60 bg-[oklch(0.14_0.02_250)]/95 px-3 py-2">
@@ -514,6 +653,102 @@ export function CopilotChat({
           {language}
         </span>
       </div>
+
+      {activeFinding && (
+        <div className="border-b border-primary/30 bg-primary/[0.06] px-3 py-2">
+          <div className="flex items-start justify-between gap-2">
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 text-[9.5px] uppercase tracking-widest text-primary">
+                <Target className="h-3 w-3" />
+                Copilot target
+                {isActiveFindingResolved && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-low/20 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-low">
+                    <CheckCircle2 className="h-2.5 w-2.5" /> Patched
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 truncate text-[12px] font-semibold">
+                {activeFinding.title ?? "Selected finding"}
+              </div>
+              <div className="mt-0.5 flex items-center gap-1 font-mono text-[10.5px] text-muted-foreground">
+                <FileCode2 className="h-3 w-3 shrink-0" />
+                <span className="truncate">
+                  {activeFinding.filePath || "source"}
+                  {targetLineLabel}
+                </span>
+              </div>
+            </div>
+            {onClearFinding && (
+              <button
+                type="button"
+                onClick={onClearFinding}
+                aria-label="Clear Copilot finding target"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted/40 hover:text-foreground"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void applyTargetFinding()}
+              disabled={
+                !onApplyFindingFix || applyingFinding || isActiveFindingResolved
+              }
+              className="h-7 gap-1 bg-primary px-2 text-[11px] text-primary-foreground hover:opacity-90"
+            >
+              {applyingFinding ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : isActiveFindingResolved ? (
+                <CheckCircle2 className="h-3 w-3" />
+              ) : (
+                <Wand2 className="h-3 w-3" />
+              )}
+              {isActiveFindingResolved ? "Resolved" : "Apply Fix & Resolve"}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={askAboutFinding}
+              disabled={loading}
+              className="h-7 gap-1 px-2 text-[11px]"
+            >
+              <Sparkles className="h-3 w-3" />
+              Ask Copilot
+            </Button>
+            {typeof pendingPatchCount === "number" && pendingPatchCount > 0 && (
+              <span className="rounded border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[9.5px] uppercase tracking-widest text-muted-foreground">
+                {pendingPatchCount} queued for PR
+              </span>
+            )}
+          </div>
+
+          {(activeFinding.vulnerableCode.trim() ||
+            activeFinding.fixedCode.trim()) && (
+            <details className="mt-1.5 text-[10.5px] text-muted-foreground">
+              <summary className="w-fit cursor-pointer select-none rounded px-1 py-0.5 hover:text-foreground">
+                View finding code
+              </summary>
+              <div className="mt-1.5 space-y-1.5">
+                {activeFinding.vulnerableCode.trim() && (
+                  <pre className="max-h-28 overflow-auto rounded border border-critical/30 bg-critical/5 p-1.5 font-mono text-[10px] leading-relaxed">
+                    <code>{activeFinding.vulnerableCode}</code>
+                  </pre>
+                )}
+                {activeFinding.fixedCode.trim() && (
+                  <pre className="max-h-28 overflow-auto rounded border border-low/30 bg-low/5 p-1.5 font-mono text-[10px] leading-relaxed">
+                    <code>{activeFinding.fixedCode}</code>
+                  </pre>
+                )}
+              </div>
+            </details>
+          )}
+        </div>
+      )}
 
       <div
         ref={scrollRef}

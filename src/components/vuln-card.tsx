@@ -13,6 +13,7 @@ import {
   GitCompareArrows,
   Check,
   Loader2,
+  Bot,
 } from "lucide-react";
 import type { ScanVulnerability } from "@/lib/scan-types";
 
@@ -31,6 +32,8 @@ interface Props {
   busy?: boolean;
   onToggle: () => void;
   onApply: () => void;
+  /** Opens (or focuses) the Copilot panel preloaded with this finding. */
+  onFixWithCopilot?: (vuln: VulnCardData) => void;
 }
 
 function AlignedDiff({ rows }: { rows: DiffRow[] }) {
@@ -118,6 +121,7 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
     busy = false,
     onToggle,
     onApply,
+    onFixWithCopilot,
   },
   ref,
 ) {
@@ -143,42 +147,67 @@ export const VulnCard = forwardRef<HTMLDivElement, Props>(function VulnCard(
         applied && "opacity-70",
       )}
     >
-      <button
-        onClick={onToggle}
-        className="flex w-full items-start justify-between gap-2 text-left"
-      >
-        <div className="min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <SeverityBadge severity={vuln.severity} />
-            {vuln.cwe_id && (
-              <span className="rounded border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
-                {vuln.cwe_id}
-              </span>
-            )}
-            {applied && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-low/20 px-2 py-0.5 text-[10px] font-semibold text-low">
-                <Check className="h-3 w-3" /> Patched
-              </span>
+      <div className="flex items-start justify-between gap-2">
+        <button
+          onClick={onToggle}
+          aria-expanded={expanded}
+          className="min-w-0 flex-1 text-left"
+        >
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <SeverityBadge severity={vuln.severity} />
+              {vuln.cwe_id && (
+                <span className="rounded border border-border/60 bg-muted/30 px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">
+                  {vuln.cwe_id}
+                </span>
+              )}
+              {applied && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-low/20 px-2 py-0.5 text-[10px] font-semibold text-low">
+                  <Check className="h-3 w-3" /> Patched
+                </span>
+              )}
+            </div>
+            <h3 className="mt-1.5 text-sm font-semibold leading-snug">
+              {vuln.title}
+            </h3>
+            {(vuln.file_path || vuln.line_start) && (
+              <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
+                {vuln.file_path || "source"}
+                {vuln.line_start &&
+                  `:${vuln.line_start}${vuln.line_end && vuln.line_end !== vuln.line_start ? `-${vuln.line_end}` : ""}`}
+              </div>
             )}
           </div>
-          <h3 className="mt-1.5 text-sm font-semibold leading-snug">
-            {vuln.title}
-          </h3>
-          {(vuln.file_path || vuln.line_start) && (
-            <div className="mt-0.5 font-mono text-[11px] text-muted-foreground">
-              {vuln.file_path || "source"}
-              {vuln.line_start &&
-                `:${vuln.line_start}${vuln.line_end && vuln.line_end !== vuln.line_start ? `-${vuln.line_end}` : ""}`}
-            </div>
+        </button>
+        <div className="flex shrink-0 items-center gap-1">
+          {onFixWithCopilot && (
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => onFixWithCopilot(vuln)}
+              aria-label={`Fix ${vuln.title} with Copilot`}
+              className="h-7 gap-1 border-primary/40 bg-primary/10 px-2 text-[10.5px] font-medium text-primary hover:bg-primary/20 hover:text-primary"
+            >
+              <Bot className="h-3 w-3" />
+              <span className="hidden sm:inline">Fix with Copilot</span>
+            </Button>
           )}
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-label={expanded ? "Collapse finding" : "Expand finding"}
+            className="rounded-md p-1 text-muted-foreground hover:bg-muted/40 hover:text-foreground"
+          >
+            <ChevronDown
+              className={cn(
+                "h-4 w-4 transition-transform",
+                expanded && "rotate-180",
+              )}
+            />
+          </button>
         </div>
-        <ChevronDown
-          className={cn(
-            "h-4 w-4 shrink-0 text-muted-foreground transition-transform",
-            expanded && "rotate-180",
-          )}
-        />
-      </button>
+      </div>
 
       {expanded && (
         <div className="mt-3 space-y-3 animate-fade-in">

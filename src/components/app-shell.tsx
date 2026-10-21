@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "./app-sidebar";
+import { ConnectGithubModalHost } from "./connect-github-modal";
 import { Separator } from "@/components/ui/separator";
 import { SignOutButton } from "@/components/require-auth";
 
@@ -42,6 +43,8 @@ export function AppShell({
           <main className="flex-1">{children}</main>
         </div>
       </div>
+      {/* Global so any toast action or error handler can open Connect GitHub. */}
+      <ConnectGithubModalHost />
     </SidebarProvider>
   );
 }
