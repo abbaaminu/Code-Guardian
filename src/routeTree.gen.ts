@@ -20,6 +20,8 @@ import { Route as ApiCopilotStreamRouteImport } from './routes/api.copilot.strea
 import { Route as ApiScanInstantRouteImport } from './routes/api.scan.instant'
 import { Route as ApiWebhooksGithubRouteImport } from './routes/api.webhooks.github'
 import { Route as ApiWebhooksPaddleRouteImport } from './routes/api.webhooks.paddle'
+import { Route as ApiAuthGithubCallbackRouteImport } from './routes/api.auth.github.callback'
+import { Route as ApiAuthGithubStartRouteImport } from './routes/api.auth.github.start'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -76,6 +78,16 @@ const ApiWebhooksPaddleRoute = ApiWebhooksPaddleRouteImport.update({
   path: '/api/webhooks/paddle',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthGithubCallbackRoute = ApiAuthGithubCallbackRouteImport.update({
+  id: '/api/auth/github/callback',
+  path: '/api/auth/github/callback',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAuthGithubStartRoute = ApiAuthGithubStartRouteImport.update({
+  id: '/api/auth/github/start',
+  path: '/api/auth/github/start',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -89,6 +101,8 @@ export interface FileRoutesByFullPath {
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
+  '/api/auth/github/callback': typeof ApiAuthGithubCallbackRoute
+  '/api/auth/github/start': typeof ApiAuthGithubStartRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -102,6 +116,8 @@ export interface FileRoutesByTo {
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
+  '/api/auth/github/callback': typeof ApiAuthGithubCallbackRoute
+  '/api/auth/github/start': typeof ApiAuthGithubStartRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -116,6 +132,8 @@ export interface FileRoutesById {
   '/api/scan/instant': typeof ApiScanInstantRoute
   '/api/webhooks/github': typeof ApiWebhooksGithubRoute
   '/api/webhooks/paddle': typeof ApiWebhooksPaddleRoute
+  '/api/auth/github/callback': typeof ApiAuthGithubCallbackRoute
+  '/api/auth/github/start': typeof ApiAuthGithubStartRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -131,6 +149,8 @@ export interface FileRouteTypes {
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
+    | '/api/auth/github/callback'
+    | '/api/auth/github/start'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -144,6 +164,8 @@ export interface FileRouteTypes {
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
+    | '/api/auth/github/callback'
+    | '/api/auth/github/start'
   id:
     | '__root__'
     | '/'
@@ -157,6 +179,8 @@ export interface FileRouteTypes {
     | '/api/scan/instant'
     | '/api/webhooks/github'
     | '/api/webhooks/paddle'
+    | '/api/auth/github/callback'
+    | '/api/auth/github/start'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -171,6 +195,8 @@ export interface RootRouteChildren {
   ApiScanInstantRoute: typeof ApiScanInstantRoute
   ApiWebhooksGithubRoute: typeof ApiWebhooksGithubRoute
   ApiWebhooksPaddleRoute: typeof ApiWebhooksPaddleRoute
+  ApiAuthGithubCallbackRoute: typeof ApiAuthGithubCallbackRoute
+  ApiAuthGithubStartRoute: typeof ApiAuthGithubStartRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -252,6 +278,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiWebhooksPaddleRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/github/callback': {
+      id: '/api/auth/github/callback'
+      path: '/api/auth/github/callback'
+      fullPath: '/api/auth/github/callback'
+      preLoaderRoute: typeof ApiAuthGithubCallbackRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/auth/github/start': {
+      id: '/api/auth/github/start'
+      path: '/api/auth/github/start'
+      fullPath: '/api/auth/github/start'
+      preLoaderRoute: typeof ApiAuthGithubStartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -267,6 +307,8 @@ const rootRouteChildren: RootRouteChildren = {
   ApiScanInstantRoute: ApiScanInstantRoute,
   ApiWebhooksGithubRoute: ApiWebhooksGithubRoute,
   ApiWebhooksPaddleRoute: ApiWebhooksPaddleRoute,
+  ApiAuthGithubCallbackRoute: ApiAuthGithubCallbackRoute,
+  ApiAuthGithubStartRoute: ApiAuthGithubStartRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
